@@ -137,6 +137,11 @@ async function enforceWarning(guild, member, warningCount, reason, moderator) {
         break;
         
       case "timeout":
+        if (!member.moderatable) {
+          console.error(`Cannot timeout ${member.user.tag}: insufficient permissions`);
+          logEmbed.addFields({ name: "Erreur", value: "Permissions insuffisantes pour timeout" });
+          break;
+        }
         await member.timeout(action.duration, `Avertissement #${warningCount}: ${reason}`);
         await member.send(
           `ðŸ"‡ **Timeout appliqué - Avertissement #${warningCount}**\n` +
@@ -147,6 +152,11 @@ async function enforceWarning(guild, member, warningCount, reason, moderator) {
         break;
         
       case "kick":
+        if (!member.kickable) {
+          console.error(`Cannot kick ${member.user.tag}: insufficient permissions`);
+          logEmbed.addFields({ name: "Erreur", value: "Permissions insuffisantes pour kick" });
+          break;
+        }
         await member.send(
           `ðŸ'¢ **Vous avez été expulsé du serveur**\n` +
           `Raison : Avertissement #${warningCount} - ${reason}\n` +
@@ -156,6 +166,11 @@ async function enforceWarning(guild, member, warningCount, reason, moderator) {
         break;
         
       case "ban":
+        if (!member.bannable) {
+          console.error(`Cannot ban ${member.user.tag}: insufficient permissions`);
+          logEmbed.addFields({ name: "Erreur", value: "Permissions insuffisantes pour ban" });
+          break;
+        }
         await member.send(
           `ðŸ"¨ **Vous avez été banni du serveur**\n` +
           `Raison : Trop d'avertissements (${warningCount}) - ${reason}\n` +
@@ -168,6 +183,8 @@ async function enforceWarning(guild, member, warningCount, reason, moderator) {
     await sendStaffLog(guild, logEmbed);
   } catch (error) {
     console.error("Erreur lors de l'application de l'action:", error);
+    logEmbed.addFields({ name: "Erreur Système", value: error.message || "Erreur inconnue" });
+    await sendStaffLog(guild, logEmbed);
   }
 }
 
@@ -829,6 +846,7 @@ client.on(Events.MessageCreate, async message => {
 // =======================================================
 
 const spamMap = new Map();
+const spamViolationsMap = new Map(); // Track spam violations per guild+user
 
 client.on(Events.MessageCreate, async message => {
   if (message.author.bot || !message.inGuild()) return;
@@ -873,13 +891,15 @@ client.on(Events.MessageCreate, async message => {
   console.log(`ðŸš¨ Spam detected from ${message.author.tag}`);
 
   // Apply automatic warning for spam (only after 3 spam violations)
-  if (!message.author.spamWarnings) message.author.spamWarnings = 0;
-  message.author.spamWarnings++;
+  // Use guild-specific tracking to avoid cross-server issues
+  const guildUserId = `${message.guild.id}-${message.author.id}`;
+  const violations = spamViolationsMap.get(guildUserId) || 0;
+  spamViolationsMap.set(guildUserId, violations + 1);
   
-  if (message.author.spamWarnings >= 3) {
+  if (violations + 1 >= 3) {
     const member = message.member;
     if (member && !member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      message.author.spamWarnings = 0; // Reset counter after warning
+      spamViolationsMap.set(guildUserId, 0); // Reset counter after warning
       const warningCount = addWarning(
         message.author.id,
         "Spam répété détecté automatiquement",
