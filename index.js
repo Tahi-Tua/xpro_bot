@@ -1,5 +1,6 @@
 require("dotenv").config();
 const fs = require("fs");
+const path = require("path");
 
 const {
   Client,
@@ -11,7 +12,8 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
-  PermissionsBitField
+  PermissionsBitField,
+  Collection
 } = require("discord.js");
 
 // =======================================================
@@ -27,6 +29,27 @@ const client = new Client({
   ],
   partials: [Partials.Channel, Partials.Message]
 });
+
+// =======================================================
+// SLASH COMMANDS LOADING
+// =======================================================
+
+client.commands = new Collection();
+const commandsPath = path.join(__dirname, "commands");
+const commandFolders = fs.readdirSync(commandsPath);
+
+for (const folder of commandFolders) {
+  const folderPath = path.join(commandsPath, folder);
+  const commandFiles = fs.readdirSync(folderPath).filter(file => file.endsWith(".js"));
+  
+  for (const file of commandFiles) {
+    const filePath = path.join(folderPath, file);
+    const command = require(filePath);
+    if (command.data && command.execute) {
+      client.commands.set(command.data.name, command);
+    }
+  }
+}
 
 // =======================================================
 // CHANNEL IDs
@@ -49,6 +72,108 @@ const STAFF_LOG_CHANNEL_ID = "1446962899019894915";    // ðŸ›¡ logs staff
 const MEMBER_ROLE_NAME = "Membre";
 const MOD_ROLE_NAME = "xpro leader";
 const PENDING_ROLE_ID = "1446841690663944316"; // ðŸ•’ En attente
+
+// =======================================================
+// REINFORCEMENT SYSTEM - WARNING TRACKING
+// =======================================================
+
+// Store warnings: Map<userId, Array<{reason, moderator, timestamp}>>
+const userWarnings = new Map();
+
+// Warning thresholds and actions
+const WARNING_ACTIONS = {
+  1: { type: "warn", duration: null },
+  2: { type: "timeout", duration: 10 * 60 * 1000 }, // 10 minutes
+  3: { type: "timeout", duration: 60 * 60 * 1000 }, // 1 hour
+  4: { type: "kick", duration: null },
+  5: { type: "ban", duration: null }
+};
+
+function addWarning(userId, reason, moderator) {
+  if (!userWarnings.has(userId)) {
+    userWarnings.set(userId, []);
+  }
+  const warnings = userWarnings.get(userId);
+  warnings.push({
+    reason,
+    moderator,
+    timestamp: Date.now()
+  });
+  return warnings.length;
+}
+
+function getWarnings(userId) {
+  return userWarnings.get(userId) || [];
+}
+
+function clearWarnings(userId) {
+  userWarnings.delete(userId);
+}
+
+async function enforceWarning(guild, member, warningCount, reason, moderator) {
+  const action = WARNING_ACTIONS[warningCount] || WARNING_ACTIONS[5];
+  
+  const logEmbed = new EmbedBuilder()
+    .setColor(0xff6b00)
+    .setTitle("âš ï¸ Système de Renforcement - Action Automatique")
+    .addFields(
+      { name: "Membre", value: `${member.user.tag} (${member.id})`, inline: true },
+      { name: "Avertissements", value: `${warningCount}`, inline: true },
+      { name: "Modérateur", value: moderator, inline: true },
+      { name: "Raison", value: reason },
+      { name: "Action", value: action.type.toUpperCase() }
+    )
+    .setTimestamp();
+  
+  try {
+    switch (action.type) {
+      case "warn":
+        await member.send(
+          `âš ï¸ **Avertissement #${warningCount}**\n` +
+          `Raison : ${reason}\n` +
+          `Modérateur : ${moderator}\n\n` +
+          `Veuillez respecter les règles du serveur.`
+        ).catch(() => {});
+        break;
+        
+      case "timeout":
+        await member.timeout(action.duration, `Avertissement #${warningCount}: ${reason}`);
+        await member.send(
+          `ðŸ"‡ **Timeout appliqué - Avertissement #${warningCount}**\n` +
+          `Durée : ${action.duration / 60000} minutes\n` +
+          `Raison : ${reason}\n` +
+          `Modérateur : ${moderator}`
+        ).catch(() => {});
+        break;
+        
+      case "kick":
+        await member.send(
+          `ðŸ'¢ **Vous avez été expulsé du serveur**\n` +
+          `Raison : Avertissement #${warningCount} - ${reason}\n` +
+          `Modérateur : ${moderator}`
+        ).catch(() => {});
+        await member.kick(`Avertissement #${warningCount}: ${reason}`);
+        break;
+        
+      case "ban":
+        await member.send(
+          `ðŸ"¨ **Vous avez été banni du serveur**\n` +
+          `Raison : Trop d'avertissements (${warningCount}) - ${reason}\n` +
+          `Modérateur : ${moderator}`
+        ).catch(() => {});
+        await member.ban({ reason: `Avertissement #${warningCount}: ${reason}` });
+        break;
+    }
+    
+    await sendStaffLog(guild, logEmbed);
+  } catch (error) {
+    console.error("Erreur lors de l'application de l'action:", error);
+  }
+}
+
+// Initialize helpers for command files
+const helpers = require("./index-helpers");
+helpers.initHelpers({ addWarning, getWarnings, clearWarnings, enforceWarning });
 
 // =======================================================
 // BADWORDS & HELPERS
@@ -680,6 +805,23 @@ client.on(Events.MessageCreate, async message => {
   console.log(
     `ðŸš¨ Bad word by ${message.author.tag} in #${message.channel.name}: ${content}`
   );
+
+  // Apply automatic warning for bad language
+  const member = message.member;
+  if (member && !member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    const warningCount = addWarning(
+      message.author.id,
+      "Langage inapproprié détecté automatiquement",
+      "Système Automatique"
+    );
+    await enforceWarning(
+      message.guild,
+      member,
+      warningCount,
+      "Langage inapproprié",
+      "Système Automatique"
+    );
+  }
 });
 
 // =======================================================
@@ -729,6 +871,56 @@ client.on(Events.MessageCreate, async message => {
   await sendStaffLog(message.guild, logEmbed);
 
   console.log(`ðŸš¨ Spam detected from ${message.author.tag}`);
+
+  // Apply automatic warning for spam (only after 3 spam violations)
+  if (!message.author.spamWarnings) message.author.spamWarnings = 0;
+  message.author.spamWarnings++;
+  
+  if (message.author.spamWarnings >= 3) {
+    const member = message.member;
+    if (member && !member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      message.author.spamWarnings = 0; // Reset counter after warning
+      const warningCount = addWarning(
+        message.author.id,
+        "Spam répété détecté automatiquement",
+        "Système Automatique"
+      );
+      await enforceWarning(
+        message.guild,
+        member,
+        warningCount,
+        "Spam répété",
+        "Système Automatique"
+      );
+    }
+  }
+});
+
+
+// =======================================================
+// SLASH COMMANDS HANDLER
+// =======================================================
+
+client.on(Events.InteractionCreate, async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+  
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+  
+  try {
+    await command.execute(interaction);
+  } catch (error) {
+    console.error(`Error executing ${interaction.commandName}:`, error);
+    const reply = {
+      content: "âŒ Une erreur s'est produite lors de l'exécution de cette commande.",
+      ephemeral: true
+    };
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp(reply);
+    } else {
+      await interaction.reply(reply);
+    }
+  }
 });
 
 // =======================================================
