@@ -75,6 +75,28 @@ const MEMBER_ROLE_NAME = "Membre";
 const MOD_ROLE_NAME = "xpro leader";
 const PENDING_ROLE_ID = "1446841690663944316"; // ðŸ•’ En attente
 
+// Cache for frequently accessed roles and channels to reduce repeated lookups
+const cache = {
+  roles: {},
+  channels: {}
+};
+
+// Helper function to get cached or fetch role by name
+function getRoleByName(guild, roleName) {
+  if (cache.roles[roleName]) return cache.roles[roleName];
+  const role = guild.roles.cache.find(r => r.name === roleName);
+  if (role) cache.roles[roleName] = role;
+  return role;
+}
+
+// Helper function to get cached or fetch role by ID
+function getRoleById(guild, roleId) {
+  if (cache.roles[roleId]) return cache.roles[roleId];
+  const role = guild.roles.cache.get(roleId);
+  if (role) cache.roles[roleId] = role;
+  return role;
+}
+
 // =======================================================
 // BADWORDS & HELPERS
 // =======================================================
@@ -94,7 +116,7 @@ function containsBadWord(text) {
 async function sendStaffLog(guild, embed) {
   const channel = guild.channels.cache.get(STAFF_LOG_CHANNEL_ID);
   if (!channel) return;
-  const staffRole = guild.roles.cache.find(r => r.name === MOD_ROLE_NAME);
+  const staffRole = getRoleByName(guild, MOD_ROLE_NAME);
   await channel
     .send({
       content: staffRole ? `${staffRole}` : "",
@@ -156,10 +178,23 @@ function getWelcomePayload(member) {
 client.once(Events.ClientReady, async () => {
   console.log(`âœ… ${client.user.tag} is now online!`);
 
+  // Fetch all channels in parallel for better performance
+  const [rulesChannel, joinUsChannel, helloChannel, divineTipsChannel] = await Promise.all([
+    client.channels.fetch(RULES_CHANNEL_ID).catch(() => null),
+    client.channels.fetch(JOIN_US_CHANNEL_ID).catch(() => null),
+    client.channels.fetch(HELLO_CHANNEL_ID).catch(() => null),
+    client.channels.fetch(DIVINE_TIPS_CHANNEL_ID).catch(() => null)
+  ]);
+
+  // Store in cache for later use
+  cache.channels.rules = rulesChannel;
+  cache.channels.joinUs = joinUsChannel;
+  cache.channels.hello = helloChannel;
+  cache.channels.divineTips = divineTipsChannel;
+
   // ---------------------------
   // 1) Rules channel
   // ---------------------------
-  const rulesChannel = await client.channels.fetch(RULES_CHANNEL_ID).catch(() => null);
   if (!rulesChannel) {
     console.log("âŒ Cannot access rules channel.");
   } else {
@@ -206,7 +241,6 @@ client.once(Events.ClientReady, async () => {
   // ---------------------------
   // 2) Join-Us intro
   // ---------------------------
-  const joinUsChannel = await client.channels.fetch(JOIN_US_CHANNEL_ID).catch(() => null);
   if (!joinUsChannel) {
     console.log("âŒ Cannot access Join-Us channel.");
   } else {
@@ -234,7 +268,6 @@ client.once(Events.ClientReady, async () => {
   // ---------------------------
   // 3) Hello-goodbye intro
   // ---------------------------
-  const helloChannel = await client.channels.fetch(HELLO_CHANNEL_ID).catch(() => null);
   if (!helloChannel) {
     console.log("âŒ Cannot access hello-goodbye channel.");
   } else {
@@ -261,7 +294,6 @@ client.once(Events.ClientReady, async () => {
   // ---------------------------
   // 4) Divine-Tips strategy guide
   // ---------------------------
-  const divineTipsChannel = await client.channels.fetch(DIVINE_TIPS_CHANNEL_ID).catch(() => null);
   if (!divineTipsChannel) {
     console.log("âŒ Cannot access divine-tips channel.");
   } else {
@@ -320,7 +352,7 @@ client.on(Events.InteractionCreate, async interaction => {
   const guild = interaction.guild;
   const member = interaction.member;
 
-  const role = guild.roles.cache.find(r => r.name === MEMBER_ROLE_NAME);
+  const role = getRoleByName(guild, MEMBER_ROLE_NAME);
   if (!role) {
     return interaction.reply({
       content: "âŒ Role 'Membre' not found. Please contact an administrator.",
@@ -401,12 +433,12 @@ client.on(Events.MessageCreate, async message => {
     const guild = message.guild;
     const member = message.member;
 
-    const pendingRole = guild.roles.cache.get(PENDING_ROLE_ID);
+    const pendingRole = getRoleById(guild, PENDING_ROLE_ID);
     if (pendingRole && !member.roles.cache.has(pendingRole.id)) {
       await member.roles.add(pendingRole).catch(() => {});
     }
 
-    const modRole = guild.roles.cache.find(r => r.name === MOD_ROLE_NAME);
+    const modRole = getRoleByName(guild, MOD_ROLE_NAME);
     if (!modRole) {
       console.log("âŒ ERROR: Moderator role not found:", MOD_ROLE_NAME);
       return;
@@ -514,7 +546,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
   await interaction.message.edit({ components: [] }).catch(() => {});
 
-  const pendingRole = guild.roles.cache.get(PENDING_ROLE_ID);
+  const pendingRole = getRoleById(guild, PENDING_ROLE_ID);
   if (pendingRole && member.roles.cache.has(pendingRole.id)) {
     await member.roles.remove(pendingRole).catch(() => {});
   }
@@ -528,16 +560,19 @@ client.on(Events.InteractionCreate, async interaction => {
     const joinChannel = guild.channels.cache.get(joinChannelId);
 
     if (joinChannel && joinChannel.isTextBased()) {
-      const userMsg = await joinChannel.messages.fetch(userMsgId).catch(() => null);
+      // Fetch both messages in parallel for better performance
+      const [userMsg, botMsg] = await Promise.all([
+        joinChannel.messages.fetch(userMsgId).catch(() => null),
+        joinChannel.messages.fetch(botMsgId).catch(() => null)
+      ]);
+      
       if (userMsg) await userMsg.delete().catch(() => {});
-
-      const botMsg = await joinChannel.messages.fetch(botMsgId).catch(() => null);
       if (botMsg) await botMsg.delete().catch(() => {});
     }
   }
 
   if (interaction.customId === "accept_app") {
-    const memberRole = guild.roles.cache.find(r => r.name === MEMBER_ROLE_NAME);
+    const memberRole = getRoleByName(guild, MEMBER_ROLE_NAME);
     if (memberRole && !member.roles.cache.has(memberRole.id)) {
       await member.roles.add(memberRole).catch(() => {});
     }
@@ -580,7 +615,7 @@ client.on(Events.GuildMemberRemove, async member => {
   const helloChannel = member.guild.channels.cache.get(HELLO_CHANNEL_ID);
   if (!helloChannel) return;
 
-  const staffRole = member.guild.roles.cache.find(r => r.name === MOD_ROLE_NAME);
+  const staffRole = getRoleByName(member.guild, MOD_ROLE_NAME);
 
   const joinedAt = member.joinedTimestamp;
   const now = Date.now();
