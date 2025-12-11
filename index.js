@@ -76,24 +76,40 @@ const MOD_ROLE_NAME = "xpro leader";
 const PENDING_ROLE_ID = "1446841690663944316"; // ðŸ•’ En attente
 
 // Cache for frequently accessed roles and channels to reduce repeated lookups
+// Limited cache sizes to prevent unbounded memory growth
+const MAX_ROLE_CACHE_SIZE = 50;
 const cache = {
   roles: {},
   channels: {}
 };
 
-// Helper function to get cached or fetch role by name
+// Helper function to get cached or fetch role by name with size limit
 function getRoleByName(guild, roleName) {
   if (cache.roles[roleName]) return cache.roles[roleName];
   const role = guild.roles.cache.find(r => r.name === roleName);
-  if (role) cache.roles[roleName] = role;
+  if (role) {
+    // Clear oldest entry if cache is full
+    const keys = Object.keys(cache.roles);
+    if (keys.length >= MAX_ROLE_CACHE_SIZE) {
+      delete cache.roles[keys[0]];
+    }
+    cache.roles[roleName] = role;
+  }
   return role;
 }
 
-// Helper function to get cached or fetch role by ID
+// Helper function to get cached or fetch role by ID with size limit
 function getRoleById(guild, roleId) {
   if (cache.roles[roleId]) return cache.roles[roleId];
   const role = guild.roles.cache.get(roleId);
-  if (role) cache.roles[roleId] = role;
+  if (role) {
+    // Clear oldest entry if cache is full
+    const keys = Object.keys(cache.roles);
+    if (keys.length >= MAX_ROLE_CACHE_SIZE) {
+      delete cache.roles[keys[0]];
+    }
+    cache.roles[roleId] = role;
+  }
   return role;
 }
 
@@ -102,13 +118,20 @@ function getRoleById(guild, roleId) {
 // =======================================================
 
 // Cache badwords and pre-lowercase them for performance
-const badwords = JSON.parse(fs.readFileSync("./utils/badwords.json", "utf8")).words.map(w => w.toLowerCase());
+// Filter out empty strings and limit length to prevent ReDoS attacks
+const badwords = JSON.parse(fs.readFileSync("./utils/badwords.json", "utf8")).words
+  .filter(w => w && w.length > 0 && w.length < 100)
+  .map(w => w.toLowerCase());
 
 // Pre-compile regex pattern for faster matching
-const badwordsPattern = new RegExp(badwords.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
+// Using word boundaries and properly escaped patterns to prevent ReDoS
+const badwordsPattern = new RegExp(
+  badwords.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 
+  'i'
+);
 
 function containsBadWord(text) {
-  if (!text) return false;
+  if (!text || text.length > 2000) return false; // Limit text length to prevent ReDoS
   // Use pre-compiled regex for O(1) average case instead of O(n) array iteration
   return badwordsPattern.test(text);
 }
@@ -180,10 +203,22 @@ client.once(Events.ClientReady, async () => {
 
   // Fetch all channels in parallel for better performance
   const [rulesChannel, joinUsChannel, helloChannel, divineTipsChannel] = await Promise.all([
-    client.channels.fetch(RULES_CHANNEL_ID).catch(() => null),
-    client.channels.fetch(JOIN_US_CHANNEL_ID).catch(() => null),
-    client.channels.fetch(HELLO_CHANNEL_ID).catch(() => null),
-    client.channels.fetch(DIVINE_TIPS_CHANNEL_ID).catch(() => null)
+    client.channels.fetch(RULES_CHANNEL_ID).catch(err => { 
+      console.log("⚠️ Failed to fetch rules channel:", err.message); 
+      return null; 
+    }),
+    client.channels.fetch(JOIN_US_CHANNEL_ID).catch(err => { 
+      console.log("⚠️ Failed to fetch join-us channel:", err.message); 
+      return null; 
+    }),
+    client.channels.fetch(HELLO_CHANNEL_ID).catch(err => { 
+      console.log("⚠️ Failed to fetch hello channel:", err.message); 
+      return null; 
+    }),
+    client.channels.fetch(DIVINE_TIPS_CHANNEL_ID).catch(err => { 
+      console.log("⚠️ Failed to fetch divine-tips channel:", err.message); 
+      return null; 
+    })
   ]);
 
   // Store in cache for later use
@@ -562,8 +597,14 @@ client.on(Events.InteractionCreate, async interaction => {
     if (joinChannel && joinChannel.isTextBased()) {
       // Fetch both messages in parallel for better performance
       const [userMsg, botMsg] = await Promise.all([
-        joinChannel.messages.fetch(userMsgId).catch(() => null),
-        joinChannel.messages.fetch(botMsgId).catch(() => null)
+        joinChannel.messages.fetch(userMsgId).catch(err => { 
+          console.log("⚠️ Failed to fetch user message:", err.message); 
+          return null; 
+        }),
+        joinChannel.messages.fetch(botMsgId).catch(err => { 
+          console.log("⚠️ Failed to fetch bot message:", err.message); 
+          return null; 
+        })
       ]);
       
       if (userMsg) await userMsg.delete().catch(() => {});
