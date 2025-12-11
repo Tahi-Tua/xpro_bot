@@ -1,5 +1,6 @@
 require("dotenv").config();
 const fs = require("fs");
+const path = require("path");
 
 const {
   Client,
@@ -11,7 +12,8 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
-  PermissionsBitField
+  PermissionsBitField,
+  Collection
 } = require("discord.js");
 
 // =======================================================
@@ -27,6 +29,29 @@ const client = new Client({
   ],
   partials: [Partials.Channel, Partials.Message]
 });
+
+// Initialize command collection
+client.commands = new Collection();
+
+// Load commands from the commands folder
+const foldersPath = path.join(__dirname, "commands");
+const commandFolders = fs.readdirSync(foldersPath);
+
+for (const folder of commandFolders) {
+  const commandsPath = path.join(foldersPath, folder);
+  const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith(".js"));
+  
+  for (const file of commandFiles) {
+    const filePath = path.join(commandsPath, file);
+    const command = require(filePath);
+    
+    if (command.data && command.execute) {
+      client.commands.set(command.data.name, command);
+    } else {
+      console.log(`⚠️ Command at ${filePath} is missing required "data" or "execute" property.`);
+    }
+  }
+}
 
 // =======================================================
 // CHANNEL IDs
@@ -54,12 +79,16 @@ const PENDING_ROLE_ID = "1446841690663944316"; // ðŸ•’ En attente
 // BADWORDS & HELPERS
 // =======================================================
 
-const badwords = JSON.parse(fs.readFileSync("./utils/badwords.json", "utf8")).words;
+// Cache badwords and pre-lowercase them for performance
+const badwords = JSON.parse(fs.readFileSync("./utils/badwords.json", "utf8")).words.map(w => w.toLowerCase());
+
+// Pre-compile regex pattern for faster matching
+const badwordsPattern = new RegExp(badwords.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
 
 function containsBadWord(text) {
   if (!text) return false;
-  const lower = text.toLowerCase();
-  return badwords.some(w => lower.includes(w.toLowerCase()));
+  // Use pre-compiled regex for O(1) average case instead of O(n) array iteration
+  return badwordsPattern.test(text);
 }
 
 async function sendStaffLog(guild, embed) {
@@ -688,6 +717,17 @@ client.on(Events.MessageCreate, async message => {
 
 const spamMap = new Map();
 
+// Cleanup old spam entries every 5 minutes to prevent memory leak
+setInterval(() => {
+  const now = Date.now();
+  const windowMs = 8000;
+  for (const [userId, data] of spamMap.entries()) {
+    if (now - data.lastTs > windowMs * 2) {
+      spamMap.delete(userId);
+    }
+  }
+}, 300000); // 5 minutes
+
 client.on(Events.MessageCreate, async message => {
   if (message.author.bot || !message.inGuild()) return;
 
@@ -729,6 +769,32 @@ client.on(Events.MessageCreate, async message => {
   await sendStaffLog(message.guild, logEmbed);
 
   console.log(`ðŸš¨ Spam detected from ${message.author.tag}`);
+});
+
+// =======================================================
+// SLASH COMMAND HANDLER
+// =======================================================
+
+client.on(Events.InteractionCreate, async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+
+  if (!command) {
+    console.error(`No command matching ${interaction.commandName} was found.`);
+    return;
+  }
+
+  try {
+    await command.execute(interaction);
+  } catch (error) {
+    console.error(`Error executing ${interaction.commandName}:`, error);
+    const replyMethod = interaction.replied || interaction.deferred ? 'followUp' : 'reply';
+    await interaction[replyMethod]({
+      content: '❌ There was an error while executing this command!',
+      ephemeral: true
+    }).catch(() => {});
+  }
 });
 
 // =======================================================
