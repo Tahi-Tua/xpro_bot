@@ -1,8 +1,10 @@
 require("dotenv").config();
 const fs = require("fs");
+const path = require("path");
 
 const {
   Client,
+  Collection,
   GatewayIntentBits,
   EmbedBuilder,
   Partials,
@@ -27,6 +29,31 @@ const client = new Client({
   ],
   partials: [Partials.Channel, Partials.Message]
 });
+
+// =======================================================
+// COMMAND HANDLER
+// =======================================================
+
+client.commands = new Collection();
+
+const foldersPath = path.join(__dirname, "commands");
+if (fs.existsSync(foldersPath)) {
+  const commandFolders = fs.readdirSync(foldersPath);
+
+  for (const folder of commandFolders) {
+    const commandsPath = path.join(foldersPath, folder);
+    const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith(".js"));
+
+    for (const file of commandFiles) {
+      const filePath = path.join(commandsPath, file);
+      const command = require(filePath);
+      if (command.data && command.execute) {
+        client.commands.set(command.data.name, command);
+      }
+    }
+  }
+  console.log(`✅ Loaded ${client.commands.size} commands`);
+}
 
 // =======================================================
 // CHANNEL IDs
@@ -177,7 +204,9 @@ async function cleanBotMessages(channel, limit = 20) {
     const messages = await channel.messages.fetch({ limit });
     const botMessages = messages.filter(m => m.author.id === client.user.id);
     if (botMessages.size > 0) {
-      await channel.bulkDelete(botMessages).catch(() => {});
+      await channel.bulkDelete(botMessages).catch(err => {
+        console.log(`Failed to bulk delete messages in ${channel.name}:`, err.message);
+      });
     }
   } catch (err) {
     console.log(`Failed to clean messages in ${channel.name}:`, err.message);
@@ -327,6 +356,37 @@ client.once(Events.ClientReady, async () => {
     console.log("ðŸ“˜ Divine-tips message sent.");
   }
 });
+
+// =======================================================
+// SLASH COMMAND HANDLER
+// =======================================================
+
+client.on(Events.InteractionCreate, async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+
+  try {
+    await command.execute(interaction);
+  } catch (error) {
+    console.error(`Error executing ${interaction.commandName}:`, error);
+    const reply = {
+      content: "❌ An error occurred while executing this command.",
+      ephemeral: true
+    };
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp(reply).catch(err => {
+        console.error("Failed to send error followUp:", err.message);
+      });
+    } else {
+      await interaction.reply(reply).catch(err => {
+        console.error("Failed to send error reply:", err.message);
+      });
+    }
+  }
+});
+
 
 // =======================================================
 // BUTTON HANDLER â€“ ACCEPT RULES
@@ -737,11 +797,14 @@ client.on(Events.MessageCreate, async message => {
 const spamMap = new Map();
 
 // Cleanup old spam entries every 5 minutes to prevent memory leaks
+// Keep entries for 10x the spam window to allow for burst detection
+const SPAM_WINDOW_MS = 8000;
+const SPAM_RETENTION_MULTIPLIER = 10;
+
 setInterval(() => {
   const now = Date.now();
-  const windowMs = 8000;
   for (const [userId, data] of spamMap.entries()) {
-    if (now - data.lastTs > windowMs * 10) {
+    if (now - data.lastTs > SPAM_WINDOW_MS * SPAM_RETENTION_MULTIPLIER) {
       spamMap.delete(userId);
     }
   }
@@ -751,11 +814,10 @@ client.on(Events.MessageCreate, async message => {
   if (message.author.bot || !message.inGuild()) return;
 
   const now = Date.now();
-  const windowMs = 8000;
   const maxMsgs = 5;
 
   const data = spamMap.get(message.author.id) || { count: 0, lastTs: now };
-  if (now - data.lastTs > windowMs) {
+  if (now - data.lastTs > SPAM_WINDOW_MS) {
     data.count = 1;
     data.lastTs = now;
   } else {
