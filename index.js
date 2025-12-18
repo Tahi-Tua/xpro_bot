@@ -54,18 +54,65 @@ const PENDING_ROLE_ID = "1446841690663944316"; // ðŸ•’ En attente
 // BADWORDS & HELPERS
 // =======================================================
 
-const badwords = JSON.parse(fs.readFileSync("./utils/badwords.json", "utf8")).words;
+// Load and normalize badwords asynchronously
+let badwords = [];
+fs.promises.readFile("./utils/badwords.json", "utf8")
+  .then(data => {
+    badwords = JSON.parse(data).words.map(w => w.toLowerCase());
+    console.log(`✅ Loaded ${badwords.length} badwords`);
+  })
+  .catch(err => {
+    console.error("❌ Failed to load badwords:", err);
+  });
 
 function containsBadWord(text) {
-  if (!text) return false;
+  if (!text || badwords.length === 0) return false;
   const lower = text.toLowerCase();
-  return badwords.some(w => lower.includes(w.toLowerCase()));
+  return badwords.some(w => lower.includes(w));
 }
 
+// =======================================================
+// ROLE & CHANNEL CACHE
+// =======================================================
+
+// Cache for frequently accessed roles and channels to avoid repeated lookups
+const roleCache = new Map();
+const channelCache = new Map();
+
+function getCachedRole(guild, roleName) {
+  const cacheKey = `${guild.id}_${roleName}`;
+  if (roleCache.has(cacheKey)) {
+    return roleCache.get(cacheKey);
+  }
+  const role = guild.roles.cache.find(r => r.name === roleName);
+  if (role) {
+    roleCache.set(cacheKey, role);
+  }
+  return role;
+}
+
+function getCachedChannel(guild, channelId) {
+  const cacheKey = `${guild.id}_${channelId}`;
+  if (channelCache.has(cacheKey)) {
+    return channelCache.get(cacheKey);
+  }
+  const channel = guild.channels.cache.get(channelId);
+  if (channel) {
+    channelCache.set(cacheKey, channel);
+  }
+  return channel;
+}
+
+// Clear caches periodically (every hour) to pick up any role/channel changes
+setInterval(() => {
+  roleCache.clear();
+  channelCache.clear();
+}, 3600000);
+
 async function sendStaffLog(guild, embed) {
-  const channel = guild.channels.cache.get(STAFF_LOG_CHANNEL_ID);
+  const channel = getCachedChannel(guild, STAFF_LOG_CHANNEL_ID);
   if (!channel) return;
-  const staffRole = guild.roles.cache.find(r => r.name === MOD_ROLE_NAME);
+  const staffRole = getCachedRole(guild, MOD_ROLE_NAME);
   await channel
     .send({
       content: staffRole ? `${staffRole}` : "",
@@ -118,6 +165,23 @@ function getWelcomePayload(member) {
     content: `ðŸŽ‰ Welcome ${member}! Make yourself at home.`,
     embeds: [embed1, embed2]
   };
+
+}
+// =======================================================
+// HELPER: Clean bot messages from a channel
+// =======================================================
+
+async function cleanBotMessages(channel, limit = 20) {
+  if (!channel) return;
+  try {
+    const messages = await channel.messages.fetch({ limit });
+    const botMessages = messages.filter(m => m.author.id === client.user.id);
+    if (botMessages.size > 0) {
+      await channel.bulkDelete(botMessages).catch(() => {});
+    }
+  } catch (err) {
+    console.log(`Failed to clean messages in ${channel.name}:`, err.message);
+  }
 }
 
 // =======================================================
@@ -134,11 +198,7 @@ client.once(Events.ClientReady, async () => {
   if (!rulesChannel) {
     console.log("âŒ Cannot access rules channel.");
   } else {
-    const messages = await rulesChannel.messages.fetch({ limit: 20 });
-    const botMessages = messages.filter(m => m.author.id === client.user.id);
-    if (botMessages.size > 0) {
-      await rulesChannel.bulkDelete(botMessages).catch(() => {});
-    }
+    await cleanBotMessages(rulesChannel, 20);
 
     const rulesRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -181,11 +241,7 @@ client.once(Events.ClientReady, async () => {
   if (!joinUsChannel) {
     console.log("âŒ Cannot access Join-Us channel.");
   } else {
-    const oldMsgs = await joinUsChannel.messages.fetch({ limit: 20 });
-    const botMsgs = oldMsgs.filter(msg => msg.author.id === client.user.id);
-    if (botMsgs.size > 0) {
-      await joinUsChannel.bulkDelete(botMsgs).catch(() => {});
-    }
+    await cleanBotMessages(joinUsChannel, 20);
 
     const introEmbed = new EmbedBuilder()
       .setColor(0x0099ff)
@@ -209,11 +265,7 @@ client.once(Events.ClientReady, async () => {
   if (!helloChannel) {
     console.log("âŒ Cannot access hello-goodbye channel.");
   } else {
-    const oldHello = await helloChannel.messages.fetch({ limit: 30 });
-    const botHello = oldHello.filter(msg => msg.author.id === client.user.id);
-    if (botHello.size > 0) {
-      await helloChannel.bulkDelete(botHello).catch(() => {});
-    }
+    await cleanBotMessages(helloChannel, 30);
 
     const helloEmbed = new EmbedBuilder()
       .setColor(0x00ff7f)
@@ -236,11 +288,7 @@ client.once(Events.ClientReady, async () => {
   if (!divineTipsChannel) {
     console.log("âŒ Cannot access divine-tips channel.");
   } else {
-    const oldTips = await divineTipsChannel.messages.fetch({ limit: 10 });
-    const botTips = oldTips.filter(m => m.author.id === client.user.id);
-    if (botTips.size > 0) {
-      await divineTipsChannel.bulkDelete(botTips).catch(() => {});
-    }
+    await cleanBotMessages(divineTipsChannel, 10);
 
     const tipsEmbed = new EmbedBuilder()
       .setColor(0xffd700)
@@ -291,7 +339,7 @@ client.on(Events.InteractionCreate, async interaction => {
   const guild = interaction.guild;
   const member = interaction.member;
 
-  const role = guild.roles.cache.find(r => r.name === MEMBER_ROLE_NAME);
+  const role = getCachedRole(guild, MEMBER_ROLE_NAME);
   if (!role) {
     return interaction.reply({
       content: "âŒ Role 'Membre' not found. Please contact an administrator.",
@@ -377,7 +425,7 @@ client.on(Events.MessageCreate, async message => {
       await member.roles.add(pendingRole).catch(() => {});
     }
 
-    const modRole = guild.roles.cache.find(r => r.name === MOD_ROLE_NAME);
+    const modRole = getCachedRole(guild, MOD_ROLE_NAME);
     if (!modRole) {
       console.log("âŒ ERROR: Moderator role not found:", MOD_ROLE_NAME);
       return;
@@ -508,7 +556,7 @@ client.on(Events.InteractionCreate, async interaction => {
   }
 
   if (interaction.customId === "accept_app") {
-    const memberRole = guild.roles.cache.find(r => r.name === MEMBER_ROLE_NAME);
+    const memberRole = getCachedRole(guild, MEMBER_ROLE_NAME);
     if (memberRole && !member.roles.cache.has(memberRole.id)) {
       await member.roles.add(memberRole).catch(() => {});
     }
@@ -551,7 +599,7 @@ client.on(Events.GuildMemberRemove, async member => {
   const helloChannel = member.guild.channels.cache.get(HELLO_CHANNEL_ID);
   if (!helloChannel) return;
 
-  const staffRole = member.guild.roles.cache.find(r => r.name === MOD_ROLE_NAME);
+  const staffRole = getCachedRole(member.guild, MOD_ROLE_NAME);
 
   const joinedAt = member.joinedTimestamp;
   const now = Date.now();
@@ -687,6 +735,17 @@ client.on(Events.MessageCreate, async message => {
 // =======================================================
 
 const spamMap = new Map();
+
+// Cleanup old spam entries every 5 minutes to prevent memory leaks
+setInterval(() => {
+  const now = Date.now();
+  const windowMs = 8000;
+  for (const [userId, data] of spamMap.entries()) {
+    if (now - data.lastTs > windowMs * 10) {
+      spamMap.delete(userId);
+    }
+  }
+}, 300000); // 5 minutes
 
 client.on(Events.MessageCreate, async message => {
   if (message.author.bot || !message.inGuild()) return;
