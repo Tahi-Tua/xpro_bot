@@ -3,7 +3,6 @@ require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const https = require("https");
 
 const express = require("express");              // ← ajouté
 const app = express();                           // ← ajouté
@@ -43,10 +42,6 @@ const { runStartupHistoryScan } = require("./handlers/historyScan");
 const stateFile = path.join(__dirname, "data/channelState.json");
 const profileStateFile = path.join(__dirname, "data/profileState.json");
 
-const BOT_AVATAR_SOURCE =
-  process.env.BOT_AVATAR_SOURCE ||
-  path.join(__dirname, "attached_assets", "bot-avatar.gif");
-
 const BOT_DISPLAY_NAME = process.env.BOT_DISPLAY_NAME || "𝔵𝔞𝔳𝔦𝔢𝔯 𝑝𝑟𝑜";
 
 const ENABLE_TELEGRAM_FILE_NOTIFIER = (() => {
@@ -84,36 +79,6 @@ function loadProfileState() {
 
 function saveProfileState(state) {
   fs.writeFileSync(profileStateFile, JSON.stringify(state, null, 2));
-}
-
-function resolveAvatarSource(source) {
-  if (!source) return null;
-  if (/^https?:\/\//i.test(source)) return source;
-  return path.isAbsolute(source) ? source : path.join(__dirname, source);
-}
-
-async function readAvatarBuffer(source) {
-  if (!source) return null;
-
-  if (/^https?:\/\//i.test(source)) {
-    return new Promise((resolve, reject) => {
-      https
-        .get(source, (res) => {
-          if (res.statusCode !== 200) {
-            reject(new Error(`Avatar request failed with status ${res.statusCode}`));
-            res.resume();
-            return;
-          }
-
-          const chunks = [];
-          res.on("data", (c) => chunks.push(c));
-          res.on("end", () => resolve(Buffer.concat(chunks)));
-        })
-        .on("error", reject);
-    });
-  }
-
-  return fs.readFileSync(source);
 }
 
 function contentHash(content) {
@@ -265,17 +230,12 @@ if (ENABLE_TELEGRAM_FILE_NOTIFIER) {
 client.once(Events.ClientReady, async (c) => {
   console.log(`✅ Logged in as ${c.user.tag}`);
   try {
-    const avatarSource = resolveAvatarSource(BOT_AVATAR_SOURCE);
-    if (avatarSource) {
-      const buffer = await readAvatarBuffer(avatarSource);
-      if (buffer) {
-        await c.user.setAvatar(buffer);
-        await c.user.setUsername(BOT_DISPLAY_NAME);
-        console.log("🖼️ Bot avatar/name updated");
-      }
+    if (BOT_DISPLAY_NAME) {
+      await c.user.setUsername(BOT_DISPLAY_NAME);
+      console.log("🖊️ Bot name updated");
     }
   } catch (err) {
-    console.warn("⚠️ Failed to update bot avatar/name:", err.message);
+    console.warn("⚠️ Failed to update bot name:", err.message);
   }
 
   // Exemple : runStartupHistoryScan si tu l’utilises
