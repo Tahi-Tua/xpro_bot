@@ -1,32 +1,32 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
+const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require("discord.js");
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("unmute")
-    .setDescription("Rend la parole à un membre mute.")
+    .setDescription("Unmute a muted member.")
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
     .addUserOption(option =>
-      option.setName("membre").setDescription("Membre à unmute").setRequired(true)
+      option.setName("member").setDescription("Member to unmute").setRequired(true)
     ),
 
   async execute(interaction) {
-    const target = interaction.options.getUser("membre");
+    const target = interaction.options.getUser("member");
     const member = interaction.guild.members.cache.get(target.id);
 
     if (!member)
-      return interaction.reply({ content: "❌ Membre introuvable.", ephemeral: true });
+      return interaction.reply({ content: "Member not found.", flags: MessageFlags.Ephemeral });
 
     try {
-      await member.timeout(null); // retire le mute
+      await member.timeout(null);
     } catch (err) {
       console.log(err);
-      return interaction.reply({ content: "❌ Impossible d'unmute ce membre.", ephemeral: true });
+      return interaction.reply({ content: "Unable to unmute this member.", flags: MessageFlags.Ephemeral });
     }
 
-    await interaction.reply(`🔊 **${target.tag}** a été unmute.`);
+    await interaction.reply(`**${target.tag}** has been unmuted.`);
 
     if (global.sendModLog) {
-      global.sendModLog(interaction, "Unmute", target, "Fin de mute manuelle");
+      global.sendModLog(interaction, "Unmute", target, "Manual unmute");
     }
   }
 };

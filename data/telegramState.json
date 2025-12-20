@@ -1,0 +1,181 @@
+{
+  "sentMessages": {
+    "utils/telegramFileNotifier.js": {
+      "textMessageId": 648,
+      "fileMessageId": 649
+    },
+    "utils/historyScanner.js": {
+      "textMessageId": 668,
+      "fileMessageId": 669
+    },
+    "handlers/joinUs.js": {
+      "textMessageId": 713,
+      "fileMessageId": 714
+    },
+    "handlers/svsReminder.js": {
+      "textMessageId": 287,
+      "fileMessageId": 288
+    },
+    "handlers/screenshots.js": {
+      "textMessageId": 187,
+      "fileMessageId": 194
+    },
+    "handlers/rules.js": {
+      "textMessageId": 749,
+      "fileMessageId": 750
+    },
+    "handlers/onlineMembers.js": {
+      "textMessageId": 188,
+      "fileMessageId": 196
+    },
+    "handlers/modDecision.js": {
+      "textMessageId": 822,
+      "fileMessageId": 823
+    },
+    "handlers/generalChat.js": {
+      "textMessageId": 192,
+      "fileMessageId": 198
+    },
+    "handlers/heroTips.js": {
+      "textMessageId": 193,
+      "fileMessageId": 199
+    },
+    "handlers/welcome.js": {
+      "textMessageId": 708,
+      "fileMessageId": 709
+    },
+    "config/channels.js": {
+      "textMessageId": 869,
+      "fileMessageId": 872
+    },
+    "utils/imageAnalyzer.js": {
+      "textMessageId": 370,
+      "fileMessageId": 371
+    },
+    "commands/moderation/kick.js": {
+      "textMessageId": 765,
+      "fileMessageId": 766
+    },
+    "commands/moderation/ban.js": {
+      "textMessageId": 767,
+      "fileMessageId": 768
+    },
+    "commands/moderation/clear.js": {
+      "textMessageId": 759,
+      "fileMessageId": 760
+    },
+    "commands/moderation/mute.js": {
+      "textMessageId": 761,
+      "fileMessageId": 762
+    },
+    "commands/moderation/svs.js": {
+      "textMessageId": 755,
+      "fileMessageId": 756
+    },
+    "commands/moderation/scan.js": {
+      "textMessageId": 757,
+      "fileMessageId": 758
+    },
+    "commands/moderation/unmute.js": {
+      "textMessageId": 763,
+      "fileMessageId": 764
+    },
+    "utils/bypass.js": {
+      "textMessageId": 280,
+      "fileMessageId": 281
+    },
+    "utils/badwords.json": {
+      "textMessageId": 652,
+      "fileMessageId": 653
+    },
+    "utils/badwords-list.txt": {
+      "textMessageId": 302,
+      "fileMessageId": 303
+    },
+    "handlers/badwords.js": {
+      "textMessageId": 824,
+      "fileMessageId": 825
+    },
+    "handlers/spam.js": {
+      "textMessageId": 664,
+      "fileMessageId": 665
+    },
+    "utils/openaiImageAnalyzer.js": {
+      "textMessageId": 361,
+      "fileMessageId": 362
+    },
+    "utils/telegramImageAnalyzer.js": {
+      "textMessageId": 392,
+      "fileMessageId": 393
+    },
+    "handlers/historyScan.js": {
+      "textMessageId": 666,
+      "fileMessageId": 667
+    },
+    "utils/openaiApplicantReview.js": {
+      "textMessageId": 717,
+      "fileMessageId": 718
+    },
+    "index.js": {
+      "textMessageId": 874,
+      "fileMessageId": 876
+    },
+    "deploy-commands.js": {
+      "textMessageId": 726,
+      "fileMessageId": 727
+    },
+    "handlers/bugReports.js": {
+      "textMessageId": 771,
+      "fileMessageId": 772
+    },
+    "package.json": {
+      "textMessageId": 930,
+      "fileMessageId": 931
+    },
+    "handlers/hallOfFame.js": {
+      "textMessageId": 912,
+      "fileMessageId": 913
+    }
+  },
+  "fileHashes": {
+    "utils/telegramFileNotifier.js": "5f222ef3a0d4e2a202d46891e96eb820",
+    "utils/historyScanner.js": "c7d426f48c1c9d5a9605dc1f03f8dd97",
+    "handlers/joinUs.js": "b1a0d6943fb3e29371c2b259a4d4c747",
+    "handlers/svsReminder.js": "7dddc495c739b861e6c79741e1af4375",
+    "handlers/screenshots.js": "46cbf03471f355376876d43744ca3af6",
+    "handlers/rules.js": "4ea91f701143bd3c5c23f53dc14b391f",
+    "handlers/onlineMembers.js": "185eb9952b7ed46c6aad274af8d3b167",
+    "handlers/modDecision.js": "e979df34ebdf354c5295b951db108d48",
+    "handlers/heroTips.js": "729d0e6decea597a8f9ba88dff3b625c",
+    "handlers/generalChat.js": "733055d93c3ee4f98c23cd8dc8d76266",
+    "handlers/welcome.js": "20273f4acc8108c3ffdce814565f6c3f",
+    "config/channels.js": "8b91ac0222ce05653613729e56f1ac16",
+    "utils/imageAnalyzer.js": "d191183c4c981d7c8e0764d994c50ab6",
+    "commands/moderation/ban.js": "66a6a450e9856c28e6a1cdbf5433f092",
+    "commands/moderation/clear.js": "25f382c692742874a201b1a8101c6e69",
+    "commands/moderation/kick.js": "9debb98c46235d9ee9fa6f95ea2db064",
+    "commands/moderation/mute.js": "e353e02701f8c0f143a1ecf36f162138",
+    "commands/moderation/scan.js": "eb7c0f11d93cc92349f5ae9f37451aa9",
+    "commands/moderation/svs.js": "e55546bea645f4842d836d520f0fe6ba",
+    "commands/moderation/unmute.js": "11d4dcd98f746d718386b88d9e1e0eaf",
+    "utils/bypass.js": "c8a569acfbb7cdd74273fd201b1dd594",
+    "utils/badwords.json": "a57af770dc04c03a53c4b21cce8a5df3",
+    "utils/badwords-list.txt": "4baf19d369bc1b4cbf1ce1b3978499bc",
+    "handlers/badwords.js": "795b4f32dc4aa35a0429920216836c93",
+    "handlers/spam.js": "f684e7340785d384c9b9e43f8aabc769",
+    "utils/openaiImageAnalyzer.js": "a8a3f6d1be82d9b14ef4667379e9a58d",
+    "utils/telegramImageAnalyzer.js": "372ae83162ce298128d4d9bc10cb7fc5",
+    "handlers/historyScan.js": "590af48c2884a8b47378c9844d9ad4d0",
+    "index.js": "359e016f455fbbb15c8064626f602887",
+    "handlers/suggestions.js": "38d49c87ec5ac63e54214a902080f1ab",
+    "utils/telegram.js": "8c25023912106bac74c32d8eb3456c96",
+    "handlers/bugReports.js": "b37ca0d08e8eeadcde43ae3f86e7713e",
+    "package.json": "634d9caa47ac0a4c1e16da36496fe833",
+    "patch_index.js": "9cd50183441605df0d0db4a9b0351f26",
+    "deploy-commands.js": "5099063101ae8c41e8dfb381d4baac4a",
+    "utils/openaiApplicantReview.js": "8a7b9106ca53526b8af21f8201b6ac52",
+    "utils/joinUsDecision.js": "a4dc9eb87c45fee8329cc1c5f0192e7d",
+    "handlers/hallOfFame.js": "0d4a246996817e6100f1affb43326b41"
+  },
+  "lastUpdated": "2025-12-20T00:18:55.285Z"
+}

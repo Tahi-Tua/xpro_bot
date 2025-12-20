@@ -22,14 +22,40 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 
 (async () => {
   try {
-    console.log("⏳ Déploiement DES COMMANDES sur TON SERVEUR…");
+    const clientId = process.env.CLIENT_ID;
+    const guildId = process.env.GUILD_ID;
+
+    if (!process.env.TOKEN) {
+      console.error(
+        "❌ Missing TOKEN in environment. Add your bot token to .env (TOKEN=...).",
+      );
+      process.exit(1);
+    }
+
+    if (!clientId || !guildId) {
+      console.error(
+        [
+          "❌ Missing CLIENT_ID and/or GUILD_ID.",
+          "• CLIENT_ID = your application's ID (same as 'bot user' ID in Developer Portal)",
+          "• GUILD_ID  = the target server ID",
+          "Set them in your .env file, e.g.:",
+          "CLIENT_ID=123456789012345678",
+          "GUILD_ID=123456789012345678",
+        ].join("\n"),
+      );
+      process.exit(1);
+    }
+
+    console.log(
+      `Deploying ${commands.length} command(s) to guild ${guildId} for application ${clientId}...`,
+    );
 
     await rest.put(
-      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+      Routes.applicationGuildCommands(clientId, guildId),
       { body: commands }
     );
 
-    console.log("✅ Commandes /slash installées INSTAMMENT sur ton serveur !");
+    console.log("Slash commands deployed successfully!");
   } catch (error) {
     console.error(error);
   }

@@ -1,8 +1,12 @@
 require("dotenv").config();
 const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const https = require("https");
 
 const {
   Client,
+  Collection,
   GatewayIntentBits,
   EmbedBuilder,
   Partials,
@@ -10,729 +14,443 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ChannelType,
-  PermissionsBitField
+  MessageFlags,
 } = require("discord.js");
 
-// =======================================================
-// CLIENT INIT
-// =======================================================
+const {
+  RULES_CHANNEL_ID,
+  JOIN_US_CHANNEL_ID,
+  DIVINE_TIPS_CHANNEL_ID,
+} = require("./config/channels");
+const { runStartupHistoryScan } = require("./handlers/historyScan");
+
+const stateFile = path.join(__dirname, "data/channelState.json");
+const profileStateFile = path.join(__dirname, "data/profileState.json");
+const BOT_AVATAR_SOURCE =
+  process.env.BOT_AVATAR_SOURCE || path.join(__dirname, "attached_assets", "bot-avatar.gif");
+const BOT_DISPLAY_NAME = process.env.BOT_DISPLAY_NAME || "𝔵𝔞𝔳𝔦𝔢𝔯 𝑝𝑟𝑜";
+const ENABLE_TELEGRAM_FILE_NOTIFIER = (() => {
+  const flag = (process.env.ENABLE_TELEGRAM_FILE_NOTIFIER || "").toLowerCase();
+  if (flag === "true") return true;
+  if (flag === "false") return false;
+  return Boolean(process.env.TG_BOT_TOKEN && process.env.TG_CHAT_ID);
+})();
+
+// Parse mode is now defined in utils/telegram.  See that module for details.
+
+function loadChannelState() {
+  try {
+    const data = fs.readFileSync(stateFile, "utf8");
+    return JSON.parse(data);
+  } catch {
+    return {};
+  }
+}
+
+function saveChannelState(state) {
+  fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+}
+
+function loadProfileState() {
+  try {
+    const data = fs.readFileSync(profileStateFile, "utf8");
+    return JSON.parse(data);
+  } catch {
+    return {};
+  }
+}
+
+function saveProfileState(state) {
+  fs.writeFileSync(profileStateFile, JSON.stringify(state, null, 2));
+}
+
+function resolveAvatarSource(source) {
+  if (!source) return null;
+  if (/^https?:\/\//i.test(source)) return source;
+  return path.isAbsolute(source) ? source : path.join(__dirname, source);
+}
+
+async function readAvatarBuffer(source) {
+  if (!source) return null;
+
+  if (/^https?:\/\//i.test(source)) {
+    return new Promise((resolve, reject) => {
+      https
+        .get(source, (res) => {
+          if (res.statusCode !== 200) {
+            reject(new Error(`Avatar request failed with status ${res.statusCode}`));
+            res.resume();
+            return;
+          }
+          const chunks = [];
+          res.on("data", (c) => chunks.push(c));
+          res.on("end", () => resolve(Buffer.concat(chunks)));
+        })
+        .on("error", reject);
+    });
+  }
+
+  return fs.readFileSync(source);
+}
+
+function contentHash(content) {
+  return crypto.createHash("md5").update(JSON.stringify(content)).digest("hex");
+}
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
   ],
-  partials: [Partials.Channel, Partials.Message]
+  partials: [Partials.Channel, Partials.Message],
 });
 
-// =======================================================
-// CHANNEL IDs
-// =======================================================
+// Route rejected promises from async event handlers to the client's `error`
+// event instead of producing unhandledRejection noise.
+client.captureRejections = true;
 
-const RULES_CHANNEL_ID = "1446260018239504569";        // ðŸŒ xpro-induction
-const HELLO_CHANNEL_ID = "1446691799098724422";        // ðŸ‘‹ hello-goodbye
-const WELCOME_CHANNEL_ID = "1360688633450991848";      // â”œãƒ»ðŸŽ±ãƒ»sÊÉ´á´…-Ê€á´‡Ç«á´œÉªÊ€á´‡á´á´‡É´á´›
-const JOIN_US_CHANNEL_ID = "1446705932154310666";      // â””ãƒ»ðŸ’Œãƒ»á´Šá´ÉªÉ´-á´œs
-const GENERAL_CHAT_ID = "1446982884949885050";         // â”Œãƒ»ðŸ—£ï¸ãƒ»general-chat
-const SCREENSHOTS_CHANNEL_ID = "1446986224660250917";  // â”œãƒ»ðŸ–¼ãƒ»screenshots
-const DIVINE_TIPS_CHANNEL_ID = "1447004548202893362";  // â”Œãƒ»âœŠãƒ»divine-tips
+client.commands = new Collection();
+client.on("error", (err) => console.error("Discord client error:", err));
+process.on("unhandledRejection", (reason) => console.error("Unhandled rejection:", reason));
 
-const STAFF_LOG_CHANNEL_ID = "1446962899019894915";    // ðŸ›¡ logs staff
-
-// =======================================================
-// ROLES
-// =======================================================
-
-const MEMBER_ROLE_NAME = "Membre";
-const MOD_ROLE_NAME = "xpro leader";
-const PENDING_ROLE_ID = "1446841690663944316"; // ðŸ•’ En attente
-
-// =======================================================
-// BADWORDS & HELPERS
-// =======================================================
-
-const badwords = JSON.parse(fs.readFileSync("./utils/badwords.json", "utf8")).words;
-
-function containsBadWord(text) {
-  if (!text) return false;
-  const lower = text.toLowerCase();
-  return badwords.some(w => lower.includes(w.toLowerCase()));
-}
-
-async function sendStaffLog(guild, embed) {
-  const channel = guild.channels.cache.get(STAFF_LOG_CHANNEL_ID);
-  if (!channel) return;
-  const staffRole = guild.roles.cache.find(r => r.name === MOD_ROLE_NAME);
-  await channel
-    .send({
-      content: staffRole ? `${staffRole}` : "",
-      embeds: [embed]
-    })
-    .catch(() => {});
-}
-
-// =======================================================
-// WELCOME PAYLOAD (friendly welcome + server tour)
-// =======================================================
-
-function getWelcomePayload(member) {
-  const joinUs = member.guild.channels.cache.get(JOIN_US_CHANNEL_ID);
-  const joinUsMention = joinUs ? `${joinUs}` : `<#${JOIN_US_CHANNEL_ID}>`;
-
-  const embed1 = new EmbedBuilder()
-    .setColor(0x3498db)
-    .setTitle("ðŸŒŸ Welcome to Xavier Pro ðŸŒŸ")
-    .setDescription(
-      `Hello ${member} ðŸ‘‹\nWe're glad you're here! Here's how to get started:`
-    )
-    .addFields(
-      {
-        name: "ðŸšª Start here",
-        value: [
-          `â€¢ Read the rules: <#${RULES_CHANNEL_ID}>`,
-          `â€¢ Say hi in introductions: <#${HELLO_CHANNEL_ID}>`
-        ].join("\n")
-      },
-      {
-        name: "ðŸŽ® Explore & share",
-        value: [
-          `â€¢ Chat with everyone: <#${GENERAL_CHAT_ID}>`,
-          `â€¢ Post your highlights: <#${SCREENSHOTS_CHANNEL_ID}>`,
-          `â€¢ Discover tips: <#${DIVINE_TIPS_CHANNEL_ID}>`
-        ].join("\n")
-      }
-    )
-    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-    .setTimestamp();
-
-  const embed2 = new EmbedBuilder()
-    .setColor(0x2ecc71)
-    .setDescription(
-      `Want to join the syndicate? Share your **screenshots & stats** anytime in ${joinUsMention}, and the team will review them.`
-    );
-
-  return {
-    content: `ðŸŽ‰ Welcome ${member}! Make yourself at home.`,
-    embeds: [embed1, embed2]
-  };
-}
-
-// =======================================================
-// READY â†’ ALL INTRO MESSAGES
-// =======================================================
-
-client.once(Events.ClientReady, async () => {
-  console.log(`âœ… ${client.user.tag} is now online!`);
-
-  // ---------------------------
-  // 1) Rules channel
-  // ---------------------------
-  const rulesChannel = await client.channels.fetch(RULES_CHANNEL_ID).catch(() => null);
-  if (!rulesChannel) {
-    console.log("âŒ Cannot access rules channel.");
-  } else {
-    const messages = await rulesChannel.messages.fetch({ limit: 20 });
-    const botMessages = messages.filter(m => m.author.id === client.user.id);
-    if (botMessages.size > 0) {
-      await rulesChannel.bulkDelete(botMessages).catch(() => {});
-    }
-
-    const rulesRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("accept_rules")
-        .setLabel("âœ… Accept the rules")
-        .setStyle(ButtonStyle.Success)
-    );
-
-    const rulesEmbed = new EmbedBuilder()
-      .setColor(0x2b2d31)
-      .setTitle("ðŸ“œ Server Rules â€“ Xavier Pro")
-      .setDescription(
-        "**Welcome to the official Xavier Pro Discord server.**\n" +
-          "Please read the rules carefully.\n\n" +
-          "__General Rules__\n" +
-          "â–« No insulting\n" +
-          "â–« No doxxing or sharing private information\n" +
-          "â–« No spam\n" +
-          "â–« English only\n" +
-          "â–« Discord name MUST match your in-game name\n\n" +
-          "__Member Rules__\n" +
-          "â–« Stay active\n" +
-          "â–« More than 4 days inactive = kick\n" +
-          "â–« Notify leaders if you need time off\n" +
-          "â–« Must participate in SVS\n" +
-          "â–« No toxic behavior\n\n" +
-          "**Press the button below to accept the rules.**"
-      )
-      .setFooter({ text: "Xavier Pro â€¢ Verification System" })
-      .setTimestamp();
-
-    await rulesChannel.send({ embeds: [rulesEmbed], components: [rulesRow] });
-    console.log("ðŸ“˜ Rules message sent.");
-  }
-
-  // ---------------------------
-  // 2) Join-Us intro
-  // ---------------------------
-  const joinUsChannel = await client.channels.fetch(JOIN_US_CHANNEL_ID).catch(() => null);
-  if (!joinUsChannel) {
-    console.log("âŒ Cannot access Join-Us channel.");
-  } else {
-    const oldMsgs = await joinUsChannel.messages.fetch({ limit: 20 });
-    const botMsgs = oldMsgs.filter(msg => msg.author.id === client.user.id);
-    if (botMsgs.size > 0) {
-      await joinUsChannel.bulkDelete(botMsgs).catch(() => {});
-    }
-
-    const introEmbed = new EmbedBuilder()
-      .setColor(0x0099ff)
-      .setTitle("ðŸ“¥ Admission â€“ Submit your stats")
-      .setDescription(
-        "Welcome! To apply, please send **your game screenshots** or a **valid official stats link**.\n\n" +
-          "âš  **No chatting in this channel** â€“ only admission information.\n" +
-          "A private ticket will be created automatically for our staff."
-      )
-      .setFooter({ text: "Xavier Pro â€“ Recruitment System" })
-      .setTimestamp();
-
-    await joinUsChannel.send({ embeds: [introEmbed] });
-    console.log("ðŸ“˜ Join-Us intro message sent.");
-  }
-
-  // ---------------------------
-  // 3) Hello-goodbye intro
-  // ---------------------------
-  const helloChannel = await client.channels.fetch(HELLO_CHANNEL_ID).catch(() => null);
-  if (!helloChannel) {
-    console.log("âŒ Cannot access hello-goodbye channel.");
-  } else {
-    const oldHello = await helloChannel.messages.fetch({ limit: 30 });
-    const botHello = oldHello.filter(msg => msg.author.id === client.user.id);
-    if (botHello.size > 0) {
-      await helloChannel.bulkDelete(botHello).catch(() => {});
-    }
-
-    const helloEmbed = new EmbedBuilder()
-      .setColor(0x00ff7f)
-      .setTitle("ðŸ‘‹ Welcome & Goodbye")
-      .setDescription(
-        "Use this channel to say hello when you join and goodbye if you leave.\n" +
-          "Staff will also see notifications when members leave the server."
-      )
-      .setFooter({ text: "Xavier Pro â€“ Hello/Goodbye" })
-      .setTimestamp();
-
-    await helloChannel.send({ embeds: [helloEmbed] });
-    console.log("ðŸ“˜ Hello-goodbye intro message sent.");
-  }
-
-  // ---------------------------
-  // 4) Divine-Tips strategy guide
-  // ---------------------------
-  const divineTipsChannel = await client.channels.fetch(DIVINE_TIPS_CHANNEL_ID).catch(() => null);
-  if (!divineTipsChannel) {
-    console.log("âŒ Cannot access divine-tips channel.");
-  } else {
-    const oldTips = await divineTipsChannel.messages.fetch({ limit: 10 });
-    const botTips = oldTips.filter(m => m.author.id === client.user.id);
-    if (botTips.size > 0) {
-      await divineTipsChannel.bulkDelete(botTips).catch(() => {});
-    }
-
-    const tipsEmbed = new EmbedBuilder()
-      .setColor(0xffd700)
-      .setTitle("ðŸ”¥ Key Strategies for Reaching Divine ðŸ”¥")
-      .setDescription(
-        "**Prioritize Contracts and Chests**\n" +
-        "Focus on completing daily contracts and opening battle/skull chests to acquire coins, cards, and resources for upgrades.\n\n" +
-        "**Join a Syndicate**\n" +
-        "Team up to participate in events and sabotage modes, earning bonus points and faster progress.\n\n" +
-        "**Strategically Upgrade Heroes**\n" +
-        "Focus on your chosen heroes through common â†’ rare â†’ epic â†’ legendary â†’ mythic â†’ **Divine**.\n\n" +
-        "**Utilize Joker Cards Wisely**\n" +
-        "Use Joker cards on your preferred heroes as they apply to anyone, unlike random drops.\n\n" +
-        "**Master Hero Abilities**\n" +
-        "Learn effective usage of your heroes' abilities and their roles within the team.\n\n" +
-        "**Develop Map Awareness**\n" +
-        "Know spawn points, purple chests, hot zones, and choke points to anticipate movements.\n\n" +
-        "**Practice Teamwork**\n" +
-        "Coordinate, communicate, and secure objectives together.\n\n" +
-        "__**Specific Hero Tips**__\n" +
-        "â€¢ **Shenji**: Use grenades to zone enemies rather than just for damage.\n" +
-        "â€¢ **Tess**: Use lightning balls for zoning and disrupting shields/abilities.\n" +
-        "â€¢ **Raven/Cyclops**: Don't spam abilities early; save them for late-game impact.\n" +
-        "â€¢ **SMG Users**: Use stimpacks offensively, not just for healing.\n" +
-        "â€¢ **Drones**: Use them as shields or distractions in combat.\n\n" +
-        "__**Additional Tips**__\n" +
-        "â€¢ **Don't be Greedy**: Avoid risky looting or early engagements.\n" +
-        "â€¢ **Learn to Disengage**: Fall back when fights are unfavorable.\n" +
-        "â€¢ **Play During Events**: Maximize participation for valuable rewards.\n" +
-        "â€¢ **Experiment**: Find the heroes and styles that suit you best."
-      )
-      .setFooter({ text: "Xavier Pro â€¢ Strategy Guide" })
-      .setTimestamp();
-
-    await divineTipsChannel.send({ embeds: [tipsEmbed] });
-    console.log("ðŸ“˜ Divine-tips message sent.");
-  }
-});
-
-// =======================================================
-// BUTTON HANDLER â€“ ACCEPT RULES
-// =======================================================
-
-client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isButton()) return;
-  if (interaction.customId !== "accept_rules") return;
-
-  const guild = interaction.guild;
-  const member = interaction.member;
-
-  const role = guild.roles.cache.find(r => r.name === MEMBER_ROLE_NAME);
-  if (!role) {
-    return interaction.reply({
-      content: "âŒ Role 'Membre' not found. Please contact an administrator.",
-      ephemeral: true
-    });
-  }
-
-  if (member.roles.cache.has(role.id)) {
-    return interaction.reply({
-      content: "âœ” You already accepted the rules!",
-      ephemeral: true
-    });
-  }
-
-  return interaction.reply({
-    content: "âœ… Rules accepted. Please follow the instructions in the recruitment channels.",
-    ephemeral: true
-  });
-});
-
-// =======================================================
-// AUTO WELCOME MESSAGE IN WELCOME_CHANNEL
-// =======================================================
-
-client.on("guildMemberAdd", async member => {
-  if (member.user.bot) return;
-  const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
-  if (!channel) return;
-
-  const payload = getWelcomePayload(member);
-  await channel.send(payload).catch(() => {});
-});
-
-// =======================================================
-// JOIN-US â€“ TICKET SYSTEM WITH PENDING ROLE
-// =======================================================
-
-client.on(Events.MessageCreate, async message => {
-  try {
-    if (message.author.bot || !message.inGuild()) return;
-    if (message.channel.id !== JOIN_US_CHANNEL_ID) return;
-
-    const hasAttachment = message.attachments.size > 0;
-    const hasHttpLink = /(https?:\/\/[^\s]+)/gi.test(message.content);
-    const hasImageEmbed =
-      message.embeds.length > 0 &&
-      message.embeds.some(e => e.type === "image" || e.thumbnail || e.image);
-
-    const isValid = hasAttachment || hasHttpLink || hasImageEmbed;
-
-    if (!isValid) {
-      await message.delete().catch(() => {});
-      return message.author
-        .send(
-          "âŒ Your message in **Join-Us** was removed.\n" +
-            "Please send **screenshots** or an **official stats link** only."
-        )
-        .catch(() => {});
-    }
-
-    const botReply = await message.reply(
-      "ðŸ“¥ Thank you for your information!\n" +
-        "**Our administrators are now reviewing your application.**"
-    );
-
-    const originalMessageId = message.id;
-    const botReplyId = botReply.id;
-
-    const existingTicket = message.guild.channels.cache.find(
-      c => c.topic === message.author.id
-    );
-    if (existingTicket) {
-      return message.author
-        .send(`âŒ You already have an open ticket: ${existingTicket}.`)
-        .catch(() => {});
-    }
-
-    const guild = message.guild;
-    const member = message.member;
-
-    const pendingRole = guild.roles.cache.get(PENDING_ROLE_ID);
-    if (pendingRole && !member.roles.cache.has(pendingRole.id)) {
-      await member.roles.add(pendingRole).catch(() => {});
-    }
-
-    const modRole = guild.roles.cache.find(r => r.name === MOD_ROLE_NAME);
-    if (!modRole) {
-      console.log("âŒ ERROR: Moderator role not found:", MOD_ROLE_NAME);
-      return;
-    }
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("accept_app")
-        .setLabel("ACCEPT")
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId("deny_app")
-        .setLabel("DECLINE")
-        .setStyle(ButtonStyle.Danger)
-    );
-
-    const ticket = await guild.channels.create({
-      name: `ticket-${message.author.username.slice(0, 10)}`,
-      type: ChannelType.GuildText,
-      topic: message.author.id,
-      permissionOverwrites: [
-        {
-          id: guild.id,
-          deny: [PermissionsBitField.Flags.ViewChannel]
-        },
-        {
-          id: message.author.id,
-          deny: [PermissionsBitField.Flags.ViewChannel]
-        },
-        {
-          id: modRole.id,
-          allow: [
-            PermissionsBitField.Flags.ViewChannel,
-            PermissionsBitField.Flags.SendMessages
-          ]
-        },
-        {
-          id: client.user.id,
-          allow: [
-            PermissionsBitField.Flags.ViewChannel,
-            PermissionsBitField.Flags.SendMessages,
-            PermissionsBitField.Flags.EmbedLinks
-          ]
+const commandsPath = path.join(__dirname, "commands");
+if (fs.existsSync(commandsPath)) {
+  const commandFolders = fs.readdirSync(commandsPath);
+  for (const folder of commandFolders) {
+    const folderPath = path.join(commandsPath, folder);
+    const stat = fs.statSync(folderPath);
+    if (stat.isDirectory()) {
+      const commandFiles = fs.readdirSync(folderPath).filter(file => file.endsWith(".js"));
+      for (const file of commandFiles) {
+        const filePath = path.join(folderPath, file);
+        const command = require(filePath);
+        if ("data" in command && "execute" in command) {
+          client.commands.set(command.data.name, command);
+          console.log(`📦 Command loaded: ${command.data.name}`);
         }
-      ]
-    });
-
-    await ticket.send({
-      content: `ðŸ“¥ New application from **${message.author.tag}**\n${modRole}`,
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0x0099ff)
-          .setTitle("ðŸ“ New Application")
-          .setDescription(
-            "Review the candidate's screenshots and/or stats.\n\n" +
-              "Once a decision is made, click **ACCEPT** or **DECLINE**."
-          )
-      ],
-      components: [row]
-    });
-
-    if (message.attachments.size > 0) {
-      await ticket.send({ files: [...message.attachments.values()] });
-    } else {
-      await ticket.send(`ðŸ”— Stats link: ${message.content}`);
+      }
     }
+  }
+}
 
-    await ticket.send({
-      content: `META_JOINUS:${message.channel.id}:${originalMessageId}:${botReplyId}`,
-      allowedMentions: { parse: [] }
-    });
+// Telegram alerting is now encapsulated in utils/telegram.  Modules that
+// need to send Telegram messages should import sendToTelegram from
+// '../utils/telegram' rather than relying on a global.  See
+// utils/telegram.js for implementation details.
+
+// Initialize Telegram File Notifier
+if (ENABLE_TELEGRAM_FILE_NOTIFIER) {
+  try {
+    const telegramNotifier = require("./utils/telegramFileNotifier");
+    telegramNotifier.init();
+    console.log("🚀 Telegram File Notifier started");
   } catch (err) {
-    console.log("âŒ Error in Join-Us Ticket System:", err);
+    console.warn("⚠️ Telegram notifier failed to start:", err.message);
   }
-});
+} else {
+  console.log("ℹ️ Telegram File Notifier disabled (ENABLE_TELEGRAM_FILE_NOTIFIER=false)");
+}
 
-// =======================================================
-// MOD DECISION â€“ ACCEPT / DECLINE APPLICATION
-// =======================================================
+require("./handlers/rules")(client);
+require("./handlers/joinUs")(client);
+require("./handlers/modDecision")(client);
+require("./handlers/generalChat")(client);
+require("./handlers/screenshots")(client);
+require("./handlers/badwords")(client);
+require("./handlers/spam")(client);
+require("./handlers/bugReports")(client);
+require("./handlers/heroTips")(client);
+require("./handlers/svsReminder")(client);
+require("./handlers/suggestions")(client);
+require("./handlers/hallOfFame")(client);
 
-client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isButton()) return;
-  if (!["accept_app", "deny_app"].includes(interaction.customId)) return;
+require("./events/memberJoin")(client);
+require("./events/memberLeave")(client);
 
-  const moderator = interaction.user;
-  const guild = interaction.guild;
-  const channel = interaction.channel;
-  const userId = channel.topic;
+const RULES_CONTENT = {
+  color: 0x2b2d31,
+  title: "📜 Server Rules – Xavier Pro",
+  description:
+    "**Welcome to the official Xavier Pro Discord server.**\n" +
+    "Please read the rules carefully.\n\n" +
+    "__General Rules__\n" +
+    "▫ No insulting\n" +
+    "▫ No doxxing or sharing private information\n" +
+    "▫ No spam\n" +
+    "▫ English only\n" +
+    "▫ Discord name MUST match your in-game name\n\n" +
+    "__Member Rules__\n" +
+    "▫ Stay active\n" +
+    "▫ More than 4 days inactive = kick\n" +
+    "▫ Notify leaders if you need time off\n" +
+    "▫ Must participate in SVS\n" +
+    "▫ No toxic behavior\n\n" +
+    "**Press the button below to accept the rules.**",
+  footer: "Xavier Pro • Verification System",
+};
 
-  if (!userId) {
-    return interaction.reply({
-      content: "âŒ No user linked to this ticket.",
-      ephemeral: true
-    });
-  }
+const JOIN_US_CONTENT = {
+  color: 0x0099ff,
+  title: "🎯 Syndicate Application (Optional)",
+  description:
+    "This channel is **only** for players who want to **apply to join the syndicate**.\n\n" +
+    "Please send your **Player ID** + **screenshots** (stats/heroes), **or** a **valid official stats link**.\n\n" +
+    "🚫 **No chatting in this channel** — applications only.\n" +
+    "A private ticket will be created automatically for our staff.",
+  footer: "Xavier Pro • Recruitment System",
+};
 
-  const member = await guild.members.fetch(userId).catch(() => null);
-  if (!member) {
-    await interaction.message.edit({ components: [] }).catch(() => {});
-    return interaction.reply({
-      content: "âŒ The user has left the server.",
-      ephemeral: true
-    });
-  }
+const DIVINE_TIPS_CONTENT = {
+  color: 0xffd700,
+  title: "🔥 Key Strategies for Reaching Divine 🔥",
+  description:
+    "**Prioritize Contracts and Chests**\n" +
+    "Focus on completing daily contracts and opening battle/skull chests to acquire coins, cards, and resources for upgrades.\n\n" +
+    "**Join a Syndicate**\n" +
+    "Team up to participate in events and sabotage modes, earning bonus points and faster progress.\n\n" +
+    "**Strategically Upgrade Heroes**\n" +
+    "Focus on your chosen heroes through common → rare → epic → legendary → mythic → **Divine**.\n\n" +
+    "**Utilize Joker Cards Wisely**\n" +
+    "Use Joker cards on your preferred heroes as they apply to anyone, unlike random drops.\n\n" +
+    "**Master Hero Abilities**\n" +
+    "Learn effective usage of your heroes' abilities and their roles within the team.\n\n" +
+    "**Develop Map Awareness**\n" +
+    "Know spawn points, purple chests, hot zones, and choke points to anticipate movements.\n\n" +
+    "**Practice Teamwork**\n" +
+    "Coordinate, communicate, and secure objectives together.\n\n" +
+    "__**Specific Hero Tips**__\n" +
+    "• **Shenji**: Use grenades to zone enemies rather than just for damage.\n" +
+    "• **Tess**: Use lightning balls for zoning and disrupting shields/abilities.\n" +
+    "• **Raven/Cyclops**: Don't spam abilities early; save them for late-game impact.\n" +
+    "• **SMG Users**: Use stimpacks offensively, not just for healing.\n" +
+    "• **Drones**: Use them as shields or distractions in combat.\n\n" +
+    "__**Additional Tips**__\n" +
+    "• **Don't be Greedy**: Avoid risky looting or early engagements.\n" +
+    "• **Learn to Disengage**: Fall back when fights are unfavorable.\n" +
+    "• **Play During Events**: Maximize participation for valuable rewards.\n" +
+    "• **Experiment**: Find the heroes and styles that suit you best.",
+  footer: "Xavier Pro • Strategy Guide",
+};
 
-  await interaction.message.edit({ components: [] }).catch(() => {});
+async function smartUpdateChannel(channelId, channelKey, content, hasButton, clientRef) {
+  const state = loadChannelState();
+  const currentHash = contentHash(content);
+  const savedData = state[channelKey];
 
-  const pendingRole = guild.roles.cache.get(PENDING_ROLE_ID);
-  if (pendingRole && member.roles.cache.has(pendingRole.id)) {
-    await member.roles.remove(pendingRole).catch(() => {});
-  }
-
-  const metaMsg = (await channel.messages.fetch({ limit: 20 })).find(m =>
-    m.content.startsWith("META_JOINUS:")
-  );
-
-  if (metaMsg) {
-    const [, joinChannelId, userMsgId, botMsgId] = metaMsg.content.split(":");
-    const joinChannel = guild.channels.cache.get(joinChannelId);
-
-    if (joinChannel && joinChannel.isTextBased()) {
-      const userMsg = await joinChannel.messages.fetch(userMsgId).catch(() => null);
-      if (userMsg) await userMsg.delete().catch(() => {});
-
-      const botMsg = await joinChannel.messages.fetch(botMsgId).catch(() => null);
-      if (botMsg) await botMsg.delete().catch(() => {});
-    }
-  }
-
-  if (interaction.customId === "accept_app") {
-    const memberRole = guild.roles.cache.find(r => r.name === MEMBER_ROLE_NAME);
-    if (memberRole && !member.roles.cache.has(memberRole.id)) {
-      await member.roles.add(memberRole).catch(() => {});
-    }
-
-    await interaction.reply({
-      content: `ðŸŸ© Application **ACCEPTED** by ${moderator}.`
-    });
-
-    member
-      .send(
-        "ðŸŽ‰ Your application has been **accepted**! Welcome to Xavier Pro!\n" +
-          "You will be contacted if further steps are required."
-      )
-      .catch(() => {});
-  }
-
-  if (interaction.customId === "deny_app") {
-    await interaction.reply({
-      content: `ðŸŸ¥ Application **DECLINED** by ${moderator}.`
-    });
-
-    member
-      .send(
-        "âŒ Your application has been **declined**.\n" +
-          "Thank you for your interest in Xavier Pro."
-      )
-      .catch(() => {});
-  }
-
-  setTimeout(() => {
-    channel.delete().catch(() => {});
-  }, 5000);
-});
-
-// =======================================================
-// HELLO-GOODBYE â€” MEMBER LEAVES
-// =======================================================
-
-client.on(Events.GuildMemberRemove, async member => {
-  const helloChannel = member.guild.channels.cache.get(HELLO_CHANNEL_ID);
-  if (!helloChannel) return;
-
-  const staffRole = member.guild.roles.cache.find(r => r.name === MOD_ROLE_NAME);
-
-  const joinedAt = member.joinedTimestamp;
-  const now = Date.now();
-  const diffDays = Math.floor((now - joinedAt) / (1000 * 60 * 60 * 24));
-
-  const roles =
-    member.roles.cache
-      .filter(r => r.id !== member.guild.id)
-      .map(r => r.name)
-      .join(", ") || "No roles";
-
-  const embed = new EmbedBuilder()
-    .setColor(0xff3b3b)
-    .setTitle("âŒ Member Left the Server")
-    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-    .addFields(
-      { name: "ðŸ‘¤ User", value: `${member.user.tag}`, inline: true },
-      { name: "ðŸ•’ Time in server", value: `${diffDays} days`, inline: true },
-      { name: "ðŸŽ­ Previous roles", value: roles }
-    )
-    .setFooter({ text: "Xavier Pro â€¢ Departure Log" })
-    .setTimestamp();
-
-  await helloChannel.send({
-    content: `${staffRole}`,
-    embeds: [embed]
-  });
-});
-
-// =======================================================
-// GENERAL-CHAT : TEXTE UNIQUEMENT
-// =======================================================
-
-client.on(Events.MessageCreate, async message => {
-  if (message.author.bot || !message.inGuild()) return;
-  if (message.channel.id !== GENERAL_CHAT_ID) return;
-
-  const hasAttachment = message.attachments.size > 0;
-  const hasMediaEmbed =
-    message.embeds.length > 0 &&
-    message.embeds.some(e => e.type === "image" || e.video || e.thumbnail);
-
-  if (!hasAttachment && !hasMediaEmbed) return;
-
-  await message.delete().catch(() => {});
-
-  message.author
-    .send(
-      "âš  In **general-chat**, only text discussions are allowed.\n" +
-        "Please use the appropriate channels for images, screenshots or videos."
-    )
-    .catch(() => {});
-});
-
-// =======================================================
-// SCREENSHOTS : MEDIAS OBLIGATOIRES
-// =======================================================
-
-client.on(Events.MessageCreate, async message => {
-  if (message.author.bot || !message.inGuild()) return;
-  if (message.channel.id !== SCREENSHOTS_CHANNEL_ID) return;
-
-  const me = message.guild.members.me;
-  const canDelete =
-    me?.permissionsIn(message.channel).has(PermissionsBitField.Flags.ManageMessages);
-
-  if (!canDelete) {
-    console.log("Cannot enforce screenshots rule: missing ManageMessages permission.");
+  const channel = await clientRef.channels.fetch(channelId).catch(() => null);
+  if (!channel) {
+    console.log(`❌ Cannot access ${channelKey} channel.`);
     return;
   }
 
-  const hasAttachment =
-    message.attachments.size > 0 &&
-    message.attachments.some(att => {
-      const type = att.contentType || "";
-      return type.startsWith("image/") || type.startsWith("video/");
-    });
-  const hasMediaEmbed =
-    message.embeds.length > 0 &&
-    message.embeds.some(e => e.image || e.thumbnail || e.video || e.type === "image");
-  const hasSticker = message.stickers?.size > 0;
+  let existingMsg = null;
 
-  if (hasAttachment || hasMediaEmbed || hasSticker) return;
-
-  await message.delete().catch(err => console.log("Delete failed in screenshots:", err));
-
-  message.author
-    .send(
-      "âš  In **screenshots**, you must include at least one screenshot, image or video.\n" +
-        "Please repost your message with the appropriate media attached."
-    )
-    .catch(() => {});
-});
-
-// =======================================================
-// GLOBAL ANTI-INSULTES / TOXICITÃ‰
-// =======================================================
-
-client.on(Events.MessageCreate, async message => {
-  if (message.author.bot || !message.inGuild()) return;
-
-  const content = message.content || "";
-  if (!containsBadWord(content)) return;
-
-  await message.delete().catch(() => {});
-
-  await message.author
-    .send(
-      "âš  Your message was removed because it either contained insults, inappropriate language or unapproved links\n" +
-        "Please keep the chat respectful, or staff may take further action."
-    )
-    .catch(() => {});
-
-  const logEmbed = new EmbedBuilder()
-    .setColor(0xff0000)
-    .setTitle("ðŸš¨ Bad language detected")
-    .addFields(
-      { name: "User", value: `${message.author.tag} (${message.author.id})` },
-      { name: "Channel", value: `${message.channel} (${message.channel.id})` },
-      { name: "Message", value: content.slice(0, 1000) || "(empty)" }
-    )
-    .setTimestamp();
-
-  await sendStaffLog(message.guild, logEmbed);
-
-  console.log(
-    `ðŸš¨ Bad word by ${message.author.tag} in #${message.channel.name}: ${content}`
-  );
-});
-
-// =======================================================
-// ANTI-SPAM SIMPLE (par utilisateur)
-// =======================================================
-
-const spamMap = new Map();
-
-client.on(Events.MessageCreate, async message => {
-  if (message.author.bot || !message.inGuild()) return;
-
-  const now = Date.now();
-  const windowMs = 8000;
-  const maxMsgs = 5;
-
-  const data = spamMap.get(message.author.id) || { count: 0, lastTs: now };
-  if (now - data.lastTs > windowMs) {
-    data.count = 1;
-    data.lastTs = now;
-  } else {
-    data.count++;
-    data.lastTs = now;
+  if (savedData?.messageId) {
+    try {
+      existingMsg = await channel.messages.fetch(savedData.messageId);
+    } catch (err) {
+      // If we can't confirm the existing message (permissions / transient error) but the
+      // content hasn't changed, avoid re-posting the same embed on every restart.
+      if (savedData.hash === currentHash && err?.code !== 10008) {
+        console.warn(
+          `⚠️ ${channelKey}: cannot fetch saved message; skipping update to avoid duplicates: ${err.message}`,
+        );
+        return;
+      }
+    }
   }
-  spamMap.set(message.author.id, data);
 
-  if (data.count <= maxMsgs) return;
+  const matchesIdentity = (msg) => {
+    const embed = msg?.embeds?.[0];
+    if (!embed) return false;
+    return embed.title === content.title && embed.footer?.text === content.footer;
+  };
 
-  await message.delete().catch(() => {});
+  const matchesContent = (msg) => {
+    const embed = msg?.embeds?.[0];
+    if (!embed) return false;
+    return matchesIdentity(msg) && embed.description === content.description;
+  };
 
-  await message.author
-    .send(
-      "âš  You are sending messages too quickly. Please slow down.\n" +
-        "Further spam may result in a mute or other sanctions."
-    )
-    .catch(() => {});
+  if (!existingMsg) {
+    // State can be missing (fresh deploy) or the tracked message may have been deleted.
+    // Try to reuse an existing pinned/recent message instead of spamming duplicates.
+    const pinned = await channel.messages.fetchPinned().catch(() => null);
+    if (pinned) {
+      existingMsg = pinned.find(
+        (m) => m.author?.id === clientRef.user.id && matchesIdentity(m),
+      );
+    }
 
-  const logEmbed = new EmbedBuilder()
-    .setColor(0xffa500)
-    .setTitle("ðŸš¨ Spam detected")
-    .addFields(
-      { name: "User", value: `${message.author.tag} (${message.author.id})` },
-      { name: "Channel", value: `${message.channel} (${message.channel.id})` },
-      { name: "Messages in window", value: `${data.count}` }
-    )
+    if (!existingMsg) {
+      const recent = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+      if (recent) {
+        existingMsg = recent.find(
+          (m) => m.author?.id === clientRef.user.id && matchesIdentity(m),
+        );
+      }
+    }
+  }
+
+  if (existingMsg && savedData?.hash === currentHash) {
+    console.log(`✅ ${channelKey}: no changes, keeping existing message.`);
+    return;
+  }
+
+  if (existingMsg && !savedData?.messageId && matchesContent(existingMsg)) {
+    state[channelKey] = { hash: currentHash, messageId: existingMsg.id };
+    saveChannelState(state);
+    console.log(`✅ ${channelKey}: no changes, keeping existing message.`);
+    return;
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(content.color)
+    .setTitle(content.title)
+    .setDescription(content.description)
+    .setFooter({ text: content.footer })
     .setTimestamp();
 
-  await sendStaffLog(message.guild, logEmbed);
+  const messageOptions = { embeds: [embed], components: [] };
 
-  console.log(`ðŸš¨ Spam detected from ${message.author.tag}`);
+  if (hasButton) {
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("accept_rules")
+        .setLabel("✅ Accept the rules")
+        .setStyle(ButtonStyle.Success),
+    );
+    messageOptions.components = [row];
+  }
+
+  if (existingMsg) {
+    const updated = await existingMsg.edit(messageOptions).catch(() => null);
+    if (updated) {
+      state[channelKey] = {
+        hash: currentHash,
+        messageId: existingMsg.id,
+      };
+      saveChannelState(state);
+      console.log(`📘 ${channelKey}: message updated.`);
+      return;
+    }
+
+    await existingMsg.delete().catch(() => {});
+  }
+
+  const newMsg = await channel.send(messageOptions).catch(() => null);
+  if (!newMsg) {
+    console.log(`❌ ${channelKey}: failed to send message.`);
+    return;
+  }
+
+  state[channelKey] = {
+    hash: currentHash,
+    messageId: newMsg.id,
+  };
+  saveChannelState(state);
+
+  console.log(`📘 ${channelKey}: message updated.`);
+}
+
+async function ensureBotProfile(clientRef) {
+  const profileState = loadProfileState();
+  let hasChanges = false;
+
+  if (BOT_DISPLAY_NAME && clientRef.user.username !== BOT_DISPLAY_NAME) {
+    try {
+      await clientRef.user.setUsername(BOT_DISPLAY_NAME);
+      profileState.username = BOT_DISPLAY_NAME;
+      hasChanges = true;
+      console.log(`✨ Bot name set to "${BOT_DISPLAY_NAME}"`);
+    } catch (err) {
+      console.warn("⚠️ Unable to update bot username:", err.message);
+    }
+  }
+
+  const resolvedAvatar = resolveAvatarSource(BOT_AVATAR_SOURCE);
+
+  if (resolvedAvatar) {
+    try {
+      const avatarBuffer = await readAvatarBuffer(resolvedAvatar);
+      const avatarHash = crypto.createHash("md5").update(avatarBuffer).digest("hex");
+
+      if (profileState.avatarHash !== avatarHash) {
+        await clientRef.user.setAvatar(avatarBuffer);
+        profileState.avatarHash = avatarHash;
+        hasChanges = true;
+        console.log("✨ Bot avatar updated.");
+      } else {
+        console.log("ℹ️ Bot avatar already up to date.");
+      }
+    } catch (err) {
+      console.warn("⚠️ Unable to update bot avatar:", err.message);
+    }
+  } else {
+    console.warn(
+      "⚠️ No bot avatar source configured; set BOT_AVATAR_SOURCE or place a file at attached_assets/bot-avatar.gif",
+    );
+  }
+
+  if (hasChanges) {
+    saveProfileState(profileState);
+  }
+}
+
+client.once(Events.ClientReady, async () => {
+  console.log(`✅ ${client.user.tag} is now online!`);
+
+  await ensureBotProfile(client);
+  await smartUpdateChannel(RULES_CHANNEL_ID, "rules", RULES_CONTENT, true, client);
+  await smartUpdateChannel(JOIN_US_CHANNEL_ID, "joinUs", JOIN_US_CONTENT, false, client);
+  await smartUpdateChannel(DIVINE_TIPS_CHANNEL_ID, "divineTips", DIVINE_TIPS_CONTENT, false, client);
+
+  try {
+    await runStartupHistoryScan(client);
+  } catch (err) {
+    console.warn("?? Startup history scan failed:", err.message);
+  }
 });
 
-// =======================================================
-// LOGIN
-// =======================================================
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+  if (!command) {
+    console.log(`❌ Command not found: ${interaction.commandName}`);
+    return;
+  }
+
+  try {
+    await command.execute(interaction);
+    console.log(`✅ Command executed: ${interaction.commandName} by ${interaction.user.tag}`);
+  } catch (error) {
+    console.error(`❌ Error executing ${interaction.commandName}:`, error);
+    const errorMessage = "An error occurred while executing this command.";
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({ content: errorMessage, flags: MessageFlags.Ephemeral }).catch(() => {});
+    } else {
+      await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral }).catch(() => {});
+    }
+  }
+});
+
+const express = require("express");
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send("Xavier Pro Bot is running!");
+});
+
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok", bot: client.user?.tag || "starting..." });
+});
+
+app.listen(PORT, () => {
+  console.log(`🌐 HTTP server running on port ${PORT}`);
+});
 
 client.login(process.env.TOKEN);

@@ -1,42 +1,42 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
+const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require("discord.js");
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("ban")
-    .setDescription("Bannir un membre du serveur.")
+    .setDescription("Ban a member from the server.")
     .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
     .addUserOption(option =>
       option
-        .setName("membre")
-        .setDescription("Membre à bannir.")
+        .setName("member")
+        .setDescription("Member to ban.")
         .setRequired(true)
     )
     .addStringOption(option =>
       option
-        .setName("raison")
-        .setDescription("Raison du ban.")
+        .setName("reason")
+        .setDescription("Reason for the ban.")
         .setRequired(false)
     ),
 
   async execute(interaction) {
-    const target = interaction.options.getUser("membre");
-    const reason = interaction.options.getString("raison") || "Aucune raison fournie.";
+    const target = interaction.options.getUser("member");
+    const reason = interaction.options.getString("reason") || "No reason provided.";
     const member = await interaction.guild.members.fetch(target.id).catch(() => null);
 
     if (!member) {
-      return interaction.reply({ content: "❌ Je ne trouve pas ce membre sur le serveur.", ephemeral: true });
+      return interaction.reply({ content: "I cannot find this member on the server.", flags: MessageFlags.Ephemeral });
     }
 
     if (!member.bannable) {
-      return interaction.reply({ content: "❌ Je ne peux pas bannir ce membre (rôle trop élevé ou permissions insuffisantes).", ephemeral: true });
+      return interaction.reply({ content: "I cannot ban this member (role too high or insufficient permissions).", flags: MessageFlags.Ephemeral });
     }
 
     if (member.id === interaction.user.id) {
-      return interaction.reply({ content: "❌ Tu ne peux pas te bannir toi-même.", ephemeral: true });
+      return interaction.reply({ content: "You cannot ban yourself.", flags: MessageFlags.Ephemeral });
     }
 
-    await member.ban({ reason: `${reason} (par ${interaction.user.tag})` });
+    await member.ban({ reason: `${reason} (by ${interaction.user.tag})` });
 
-    await interaction.reply(`🔨 **${target.tag}** a été banni.\n📝 Raison : ${reason}`);
+    await interaction.reply(`**${target.tag}** has been banned.\nReason: ${reason}`);
   }
 };
