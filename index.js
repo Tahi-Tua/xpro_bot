@@ -177,6 +177,66 @@ if (fs.existsSync(commandsPath)) {
 }
 
 // ============================================================================
+// Handlers loader (auto-register all handlers exporting a function)
+// ============================================================================
+
+const handlersPath = path.join(__dirname, "handlers");
+if (fs.existsSync(handlersPath)) {
+  const handlerFiles = fs
+    .readdirSync(handlersPath)
+    .filter((file) => file.endsWith(".js"));
+
+  for (const file of handlerFiles) {
+    const filePath = path.join(handlersPath, file);
+    try {
+      const mod = require(filePath);
+      if (typeof mod === "function") {
+        mod(client);
+        console.log(`🔗 Handler loaded: ${file}`);
+      } else {
+        console.warn(
+          `[WARN] The handler at ${filePath} does not export a function.`
+        );
+      }
+    } catch (err) {
+      console.error(`❌ Failed to load handler ${file}:`, err.message);
+    }
+  }
+} else {
+  console.warn("⚠️ No 'handlers' directory found.");
+}
+
+// ============================================================================
+// Events loader (auto-register all events exporting a function)
+// ============================================================================
+
+const eventsPath = path.join(__dirname, "events");
+if (fs.existsSync(eventsPath)) {
+  const eventFiles = fs
+    .readdirSync(eventsPath)
+    .filter((file) => file.endsWith(".js"));
+
+  for (const file of eventFiles) {
+    const filePath = path.join(eventsPath, file);
+    try {
+      const mod = require(filePath);
+      if (typeof mod === "function") {
+        mod(client);
+        console.log(`🎛️ Event loaded: ${file}`);
+      } else {
+        console.warn(
+          `[WARN] The event at ${filePath} does not export a function.`
+        );
+      }
+    } catch (err) {
+      console.error(`❌ Failed to load event ${file}:`, err.message);
+    }
+  }
+} else {
+  console.warn("⚠️ No 'events' directory found.");
+}
+
+// ============================================================================
 // Telegram File Notifier
 // ============================================================================
 
