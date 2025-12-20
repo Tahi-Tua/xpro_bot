@@ -8,15 +8,15 @@ const {
 } = require("discord.js");
 const { SVS_REMINDER_CHANNEL_ID, SVS_ROLE_ID } = require("../config/channels");
 
-// Horaires locaux souhaités (CET) : 4:00, 7:30, 11:30, 16:00, 19:30, 23:30
+// Horaires locaux souhaités (CET) : 2:30, 6:30, 10:30, 15:00, 18:30, 22:30
 // Ici on utilise l'heure locale du serveur (pas de conversion UTC)
 const SVS_TIMES = [
-  { hour: 4, minute: 0 },   // 04:00
-  { hour: 7, minute: 30 },  // 07:30
-  { hour: 11, minute: 30 }, // 11:30
-  { hour: 16, minute: 0 },  // 16:00
-  { hour: 19, minute: 30 }, // 19:30
-  { hour: 23, minute: 30 }, // 23:30
+  { hour: 2, minute: 30 },   // 02:30
+  { hour: 6, minute: 30 },  // 06:30
+  { hour: 10, minute: 30 }, // 10:30
+  { hour: 15, minute: 0 },  // 15:00
+  { hour: 18, minute: 30 }, // 18:30
+  { hour: 22, minute: 30 }, // 22:30
 ];
 
 const RESPONSE_TIMEOUT_MS = 20 * 60 * 1000;
