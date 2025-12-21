@@ -460,6 +460,7 @@ module.exports = (client) => {
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot || !message.inGuild()) return;
     if (BUG_REPORTS_CHANNEL_ID && message.channel.id === BUG_REPORTS_CHANNEL_ID) return;
+    if (message.channel.id === "1381595826505253024") return;
     if (hasBypassRole(message.member)) return;
     
     const now = Date.now();
