@@ -21,25 +21,27 @@ module.exports = (client) => {
       return;
     }
 
-    const hasAttachment = message.attachments.size > 0;
     const hasVideo =
-      hasAttachment && message.attachments.some((a) => isVideoAttachment(a));
+      message.attachments.size > 0 &&
+      message.attachments.some((a) => isVideoAttachment(a));
     const hasImage =
-      hasAttachment &&
-      message.attachments.some((a) => isImageAttachment(a, { allowGif: false }));
+      message.attachments.size > 0 &&
+      message.attachments.some((a) => isImageAttachment(a, { allowGif: true }));
     const hasMediaEmbed =
       message.embeds.length > 0 &&
-      message.embeds.some(
-        (e) =>
-          e.type === "image" ||
-          e.type === "video" ||
+      message.embeds.some((e) => {
+        const type = (e.type || "").toLowerCase();
+        return (
+          type === "image" ||
+          type === "video" ||
+          type === "gifv" ||
           e.image ||
           e.thumbnail ||
-          e.video,
-      );
-    const hasSticker = message.stickers?.size > 0;
+          e.video
+        );
+      });
 
-    if (!hasAttachment && !hasMediaEmbed && !hasSticker) return;
+    if (!hasVideo && !hasImage && !hasMediaEmbed) return;
 
     const deleted = await message
       .delete()
@@ -52,8 +54,8 @@ module.exports = (client) => {
 
     message.author
       .send(
-        "? In **general-chat**, only text discussions are allowed.\n" +
-          "Please use the appropriate channels for images, screenshots or videos.",
+        "? In **general-chat**, images, GIFs, and videos are not allowed.\n" +
+          "Please use the appropriate channels for media.",
       )
       .catch(() => {});
   });
