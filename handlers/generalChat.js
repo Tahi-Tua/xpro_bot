@@ -8,12 +8,19 @@ module.exports = (client) => {
     if (message.channel.id !== GENERAL_CHAT_ID) return;
     if (hasBypassRole(message.member)) return;
 
-    const hasAttachment = message.attachments.size > 0;
+    const hasVideo = message.attachments.some((a) => {
+      const contentType = a.contentType || "";
+      return contentType.startsWith("video/");
+    });
+    const hasImage = message.attachments.some((a) => {
+      const contentType = a.contentType || "";
+      return contentType.startsWith("image/") && !contentType.includes("gif");
+    });
     const hasMediaEmbed =
       message.embeds.length > 0 &&
-      message.embeds.some((e) => e.type === "image" || e.video || e.thumbnail);
+      message.embeds.some((e) => e.type === "image" || e.type === "video");
 
-    if (!hasAttachment && !hasMediaEmbed) return;
+    if (!hasVideo && !hasImage && !hasMediaEmbed) return;
 
     await message.delete().catch(() => {});
 
