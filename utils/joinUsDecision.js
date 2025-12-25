@@ -1,4 +1,4 @@
-const { MEMBER_ROLE_NAME, PENDING_ROLE_ID } = require("../config/channels");
+const { MEMBER_ROLE_NAME, PENDING_ROLE_ID, VISITOR_ROLE_NAME } = require("../config/channels");
 
 const UNVERIFIED_ROLE_NAME = "Unverified";
 const APPLICANT_ROLE_NAME = "Applicant";
@@ -51,10 +51,16 @@ async function applyDeclineRoles(guild, member) {
     await member.roles.remove(applicantRole).catch(() => {});
   }
 
-  // Remove Unverified role so declined users can explore the server (team-search, clips, screenshots, etc.)
+  // Remove Unverified role so declined users can explore limited channels
   const unverifiedRole = guild.roles.cache.find((r) => r.name === UNVERIFIED_ROLE_NAME);
   if (unverifiedRole && member.roles.cache.has(unverifiedRole.id)) {
     await member.roles.remove(unverifiedRole).catch(() => {});
+  }
+
+  // Add Visitor role to give access only to specific channels (team-search, clips, screenshots, etc.)
+  const visitorRole = guild.roles.cache.find((r) => r.name === VISITOR_ROLE_NAME);
+  if (visitorRole && !member.roles.cache.has(visitorRole.id)) {
+    await member.roles.add(visitorRole).catch(() => {});
   }
 }
 
@@ -129,10 +135,10 @@ async function runJoinUsTicketDecision({
       `${reason ? reason : "(no reason provided)"}. ` +
       "When this is sorted out feel free to reach out to us and we'll gladly look into letting u in.\n" +
       "For now feel free to explore the server:\n\n" +
-      `┌・📹・clips : ${clipsMention}\n` +
-      `├・🖼・screenshots : ${screenshotsMention}\n` +
-      `├・📊・balance-changes : ${balanceChangesMention}\n` +
-      `├・🤣・memes : ${memesMention}`;
+      `${clipsMention}\n` +
+      `${screenshotsMention}\n` +
+      `${balanceChangesMention}\n` +
+      `${memesMention}`;
 
     await member.send(declineMessage).catch(() => {});
 
@@ -146,3 +152,4 @@ async function runJoinUsTicketDecision({
 module.exports = {
   runJoinUsTicketDecision,
 };
+
