@@ -113,7 +113,15 @@ module.exports = (client) => {
       // Build permission overwrites for the ticket
       const permissionOverwrites = [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: message.author.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+        // Explicitly deny the applicant from viewing the ticket
+        { 
+          id: message.author.id, 
+          deny: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+          ] 
+        },
         {
           id: client.user.id,
           allow: [
