@@ -7,7 +7,7 @@
 
 require("dotenv").config();
 const { Client, GatewayIntentBits, PermissionFlagsBits, ChannelType } = require("discord.js");
-const { MEMBER_ROLE_NAME } = require("./config/channels");
+const { MEMBER_ROLE_NAME, MEMBER_ROLE_ID } = require("./config/channels");
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
@@ -35,7 +35,9 @@ client.once("ready", async () => {
     console.log(`\n📋 Configuring permissions for guild: ${guild.name}\n`);
 
     // Find the member role
-    const memberRole = guild.roles.cache.find((r) => r.name === MEMBER_ROLE_NAME);
+    const memberRole = MEMBER_ROLE_ID
+      ? guild.roles.cache.get(MEMBER_ROLE_ID)
+      : guild.roles.cache.find((r) => r.name === MEMBER_ROLE_NAME);
     if (!memberRole) {
       console.error(`❌ Member role "${MEMBER_ROLE_NAME}" not found!`);
       process.exit(1);

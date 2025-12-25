@@ -22,6 +22,10 @@ module.exports = {
   // throughout the bot when assigning roles after verification.  Change
   // this to match your server's member role name.
   MEMBER_ROLE_NAME: "𝔵𝔞𝔳𝔦𝔢𝔯 𝑝𝑟𝑜",
+  // Optional: if you prefer referencing the member role by ID rather than name,
+  // set MEMBER_ROLE_ID (or via env var MEMBER_ROLE_ID). When present, the bot
+  // will use the ID to grant the role on acceptance.
+  MEMBER_ROLE_ID: process.env.MEMBER_ROLE_ID || null,
 
   // Role IDs for ticket management (Leaders and Staff)
   LEADER_ROLE_ID: "1380247716596023317",  // ҲƤƦƠ ԼЄƛƊЄƦ 🌟

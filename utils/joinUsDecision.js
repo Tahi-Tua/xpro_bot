@@ -1,4 +1,4 @@
-const { MEMBER_ROLE_NAME, PENDING_ROLE_ID, VISITOR_ROLE_NAME } = require("../config/channels");
+const { MEMBER_ROLE_NAME, MEMBER_ROLE_ID, PENDING_ROLE_ID, VISITOR_ROLE_NAME } = require("../config/channels");
 
 const UNVERIFIED_ROLE_NAME = "Unverified";
 const APPLICANT_ROLE_NAME = "Applicant";
@@ -29,7 +29,9 @@ async function cleanupJoinUsMessages(guild, ticketChannel) {
 }
 
 async function applyAcceptRoles(guild, member) {
-  const memberRole = guild.roles.cache.find((r) => r.name === MEMBER_ROLE_NAME);
+  const memberRole = MEMBER_ROLE_ID
+    ? guild.roles.cache.get(MEMBER_ROLE_ID)
+    : guild.roles.cache.find((r) => r.name === MEMBER_ROLE_NAME);
   if (memberRole && !member.roles.cache.has(memberRole.id)) {
     await member.roles.add(memberRole).catch(() => {});
   }
