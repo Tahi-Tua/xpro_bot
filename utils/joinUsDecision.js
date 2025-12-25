@@ -50,6 +50,12 @@ async function applyDeclineRoles(guild, member) {
   if (applicantRole && member.roles.cache.has(applicantRole.id)) {
     await member.roles.remove(applicantRole).catch(() => {});
   }
+
+  // Remove Unverified role so declined users can explore the server (team-search, clips, screenshots, etc.)
+  const unverifiedRole = guild.roles.cache.find((r) => r.name === UNVERIFIED_ROLE_NAME);
+  if (unverifiedRole && member.roles.cache.has(unverifiedRole.id)) {
+    await member.roles.remove(unverifiedRole).catch(() => {});
+  }
 }
 
 async function closeTicketSoon(ticketChannel) {
@@ -140,4 +146,3 @@ async function runJoinUsTicketDecision({
 module.exports = {
   runJoinUsTicketDecision,
 };
-
