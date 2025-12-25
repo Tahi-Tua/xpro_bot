@@ -108,12 +108,27 @@ async function runJoinUsTicketDecision({
       )
       .catch(() => {});
 
-    await member
-      .send(
-        "? Your application has been **declined**.\n" +
-          "Thank you for your interest in Xavier Pro.",
-      )
-      .catch(() => {});
+    const teamSearchMention = `<#1381575870468198460>`;
+    const clipsMention = `<#1381581265542844496>`;
+    const screenshotsMention = `<#1381575518532534402>`;
+    const balanceChangesMention = `<#1427088947871223848>`;
+    const memesMention = `<#1381575710942167101>`;
+
+    const declineMessage =
+      "Unfortunately your application has been rejected, " +
+      "If u want a friend or a team you can reach out to our members individually or maybe go to our\n\n" +
+      `${teamSearchMention}\n\n` +
+      "to get a team, but unfortunately we can't actually let you into the syndicate. " +
+      "Your application was rejected for the following reasons: " +
+      `${reason ? reason : "(no reason provided)"}. ` +
+      "When this is sorted out feel free to reach out to us and we'll gladly look into letting u in.\n" +
+      "For now feel free to explore the server:\n\n" +
+      `┌・📹・clips : ${clipsMention}\n` +
+      `├・🖼・screenshots : ${screenshotsMention}\n` +
+      `├・📊・balance-changes : ${balanceChangesMention}\n` +
+      `├・🤣・memes : ${memesMention}`;
+
+    await member.send(declineMessage).catch(() => {});
 
     await closeTicketSoon(ticketChannel);
     return { ok: true };
