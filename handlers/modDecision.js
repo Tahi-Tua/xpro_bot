@@ -14,9 +14,7 @@ const { runJoinUsTicketDecision } = require("../utils/joinUsDecision");
 module.exports = (client) => {
   client.on(Events.InteractionCreate, async (interaction) => {
     // Handle ACCEPT/DECLINE buttons
-    if (interaction.isButton()) {
-      if (!["accept_app", "deny_app"].includes(interaction.customId)) return;
-
+    if (interaction.isButton() && ["accept_app", "deny_app"].includes(interaction.customId)) {
       try {
         const moderator = interaction.user;
         const guild = interaction.guild;
@@ -114,7 +112,6 @@ module.exports = (client) => {
           await interaction.reply(payload).catch(() => {});
         }
       }
-      return;
     }
 
     // Handle reason selection from dropdown
@@ -172,7 +169,6 @@ module.exports = (client) => {
           .reply({ content: "? An error occurred.", ephemeral: true })
           .catch(() => {});
       }
-      return;
     }
 
     // Handle the button to trigger custom reason modal
@@ -202,7 +198,6 @@ module.exports = (client) => {
           .reply({ content: "? Unable to open modal.", ephemeral: true })
           .catch(() => {});
       }
-      return;
     }
 
     // Handle the rejection reason modal submit
