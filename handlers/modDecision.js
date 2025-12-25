@@ -1,81 +1,265 @@
-const { Events, MessageFlags } = require("discord.js");
+const {
+  Events,
+  MessageFlags,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ActionRowBuilder,
+  StringSelectMenuBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} = require("discord.js");
 const { runJoinUsTicketDecision } = require("../utils/joinUsDecision");
 
 module.exports = (client) => {
   client.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.isButton()) return;
-    if (!["accept_app", "deny_app"].includes(interaction.customId)) return;
+    // Handle ACCEPT/DECLINE buttons
+    if (interaction.isButton()) {
+      if (!["accept_app", "deny_app"].includes(interaction.customId)) return;
 
-    try {
       try {
+        const moderator = interaction.user;
+        const guild = interaction.guild;
+        const channel = interaction.channel;
+        const userId = channel?.topic;
+
+        if (!guild || !channel) {
+          await interaction
+            .reply({ content: "? Ticket context missing.", flags: MessageFlags.Ephemeral })
+            .catch(() => {});
+          return;
+        }
+
+        if (!userId) {
+          await interaction
+            .reply({ content: "? No user linked to this ticket.", flags: MessageFlags.Ephemeral })
+            .catch(() => {});
+          return;
+        }
+
+        if (interaction.customId === "deny_app") {
+          // Present quick-pick reasons + custom input option (ephemeral)
+          const messageId = interaction.message?.id;
+
+          const select = new StringSelectMenuBuilder()
+            .setCustomId(`deny_reasons_select:${messageId}`)
+            .setPlaceholder("Select a reason for rejection")
+            .addOptions([
+              { label: "Insufficient stats", value: "Insufficient stats" },
+              { label: "Incomplete screenshots", value: "Incomplete screenshots" },
+              { label: "Invalid/No stats link", value: "Invalid or missing stats link" },
+              { label: "Not meeting requirements", value: "Not meeting requirements" },
+              { label: "Behavior concerns", value: "Behavior concerns" },
+              { label: "Wrong server/region", value: "Wrong server or region" },
+            ]);
+
+          const selectRow = new ActionRowBuilder().addComponents(select);
+          const customBtnRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`deny_custom_reason:${messageId}`)
+              .setLabel("Type custom reason")
+              .setStyle(ButtonStyle.Secondary),
+          );
+
+          await interaction
+            .reply({
+              content: "Choose a predefined reason or type a custom one:",
+              components: [selectRow, customBtnRow],
+              ephemeral: true,
+            })
+            .catch(() => {});
+          return;
+        }
+
+        // ACCEPT flow
         await interaction.deferUpdate();
-      } catch (err) {
-        // If the interaction already expired, there's nothing we can do.
-        if (err?.code === 10062) return;
-        throw err;
-      }
 
-      const moderator = interaction.user;
-      const guild = interaction.guild;
-      const channel = interaction.channel;
-      const userId = channel?.topic;
+        const result = await runJoinUsTicketDecision({
+          guild,
+          ticketChannel: channel,
+          decisionMessage: interaction.message,
+          userId,
+          decision: "accept",
+          moderatorLabel: `${moderator}`,
+        });
 
-      if (!guild || !channel) {
-        await interaction
-          .followUp({ content: "? Ticket context missing.", flags: MessageFlags.Ephemeral })
-          .catch(() => {});
-        return;
-      }
+        if (!result.ok) {
+          await interaction
+            .followUp({
+              content: `? ${result.error || "Action failed."}`,
+              flags: MessageFlags.Ephemeral,
+            })
+            .catch(() => {});
+          return;
+        }
 
-      if (!userId) {
-        await interaction
-          .followUp({ content: "? No user linked to this ticket.", flags: MessageFlags.Ephemeral })
-          .catch(() => {});
-        return;
-      }
-
-      const decision = interaction.customId === "accept_app" ? "accept" : "deny";
-      const result = await runJoinUsTicketDecision({
-        guild,
-        ticketChannel: channel,
-        decisionMessage: interaction.message,
-        userId,
-        decision,
-        moderatorLabel: `${moderator}`,
-      });
-
-      if (!result.ok) {
         await interaction
           .followUp({
-            content: `? ${result.error || "Action failed."}`,
-            flags: MessageFlags.Ephemeral,
+            content: `Application **ACCEPTED** by ${moderator}.`,
+            allowedMentions: { users: [] },
           })
           .catch(() => {});
-        return;
+      } catch (error) {
+        console.error("Error in mod decision handler:", error);
+        if (error?.code === 10062) return;
+
+        const payload = {
+          content: "? An error occurred. Please try again.",
+          flags: MessageFlags.Ephemeral,
+        };
+
+        if (interaction.deferred || interaction.replied) {
+          await interaction.followUp(payload).catch(() => {});
+        } else {
+          await interaction.reply(payload).catch(() => {});
+        }
       }
+      return;
+    }
 
-      await interaction
-        .followUp({
-          content:
-            decision === "accept"
-              ? `?? Application **ACCEPTED** by ${moderator}.`
-              : `?? Application **DECLINED** by ${moderator}.`,
-          allowedMentions: { users: [] },
-        })
-        .catch(() => {});
-    } catch (error) {
-      console.error("Error in mod decision handler:", error);
-      if (error?.code === 10062) return;
+    // Handle reason selection from dropdown
+    if (interaction.isStringSelectMenu()) {
+      const cid = interaction.customId || "";
+      if (!cid.startsWith("deny_reasons_select:")) return;
 
-      const payload = {
-        content: "? An error occurred. Please try again.",
-        flags: MessageFlags.Ephemeral,
-      };
+      try {
+        const [, messageId] = cid.split(":");
+        const selected = interaction.values?.[0] || null;
+        const moderator = interaction.user;
+        const guild = interaction.guild;
+        const channel = interaction.channel;
+        const userId = channel?.topic;
 
-      if (interaction.deferred || interaction.replied) {
-        await interaction.followUp(payload).catch(() => {});
-      } else {
-        await interaction.reply(payload).catch(() => {});
+        if (!guild || !channel || !userId || !selected) {
+          await interaction
+            .reply({ content: "? Missing context or reason.", ephemeral: true })
+            .catch(() => {});
+          return;
+        }
+
+        let decisionMessage = null;
+        if (messageId) {
+          decisionMessage = await channel.messages.fetch(messageId).catch(() => null);
+        }
+
+        const result = await runJoinUsTicketDecision({
+          guild,
+          ticketChannel: channel,
+          decisionMessage,
+          userId,
+          decision: "deny",
+          moderatorLabel: `${moderator}`,
+          reason: selected,
+        });
+
+        if (!result.ok) {
+          await interaction
+            .reply({ content: `? ${result.error || "Action failed."}`, ephemeral: true })
+            .catch(() => {});
+          return;
+        }
+
+        await interaction
+          .reply({
+            content: `Application **DECLINED** by ${moderator}.`,
+            ephemeral: true,
+            allowedMentions: { users: [] },
+          })
+          .catch(() => {});
+      } catch (error) {
+        console.error("Error handling decline select:", error);
+        await interaction
+          .reply({ content: "? An error occurred.", ephemeral: true })
+          .catch(() => {});
+      }
+      return;
+    }
+
+    // Handle the button to trigger custom reason modal
+    if (interaction.isButton()) {
+      const cid = interaction.customId || "";
+      if (!cid.startsWith("deny_custom_reason:")) return;
+
+      try {
+        const [, messageId] = cid.split(":");
+        const modal = new ModalBuilder()
+          .setCustomId(`deny_reason_modal:${messageId}`)
+          .setTitle("Decline Application");
+
+        const reasonInput = new TextInputBuilder()
+          .setCustomId("deny_reason")
+          .setLabel("Reason for rejection")
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setMaxLength(500);
+
+        const row = new ActionRowBuilder().addComponents(reasonInput);
+        modal.addComponents(row);
+        await interaction.showModal(modal).catch(() => {});
+      } catch (error) {
+        console.error("Error opening custom reason modal:", error);
+        await interaction
+          .reply({ content: "? Unable to open modal.", ephemeral: true })
+          .catch(() => {});
+      }
+      return;
+    }
+
+    // Handle the rejection reason modal submit
+    if (interaction.isModalSubmit()) {
+      const cid = interaction.customId || "";
+      if (!cid.startsWith("deny_reason_modal:")) return;
+
+      try {
+        const [, messageId] = cid.split(":");
+        const reason = interaction.fields.getTextInputValue("deny_reason")?.trim() || null;
+
+        const moderator = interaction.user;
+        const guild = interaction.guild;
+        const channel = interaction.channel;
+        const userId = channel?.topic;
+
+        if (!guild || !channel || !userId) {
+          await interaction
+            .reply({ content: "? Missing ticket context.", flags: MessageFlags.Ephemeral })
+            .catch(() => {});
+          return;
+        }
+
+        let decisionMessage = null;
+        if (messageId) {
+          decisionMessage = await channel.messages.fetch(messageId).catch(() => null);
+        }
+
+        const result = await runJoinUsTicketDecision({
+          guild,
+          ticketChannel: channel,
+          decisionMessage,
+          userId,
+          decision: "deny",
+          moderatorLabel: `${moderator}`,
+          reason,
+        });
+
+        if (!result.ok) {
+          await interaction
+            .reply({ content: `? ${result.error || "Action failed."}`, ephemeral: true })
+            .catch(() => {});
+          return;
+        }
+
+        await interaction
+          .reply({
+            content: `Application **DECLINED** by ${moderator}.`,
+            ephemeral: true,
+            allowedMentions: { users: [] },
+          })
+          .catch(() => {});
+      } catch (error) {
+        console.error("Error handling decline modal:", error);
+        await interaction
+          .reply({ content: "? An error occurred.", ephemeral: true })
+          .catch(() => {});
       }
     }
   });
