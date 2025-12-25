@@ -27,5 +27,6 @@ module.exports = {
   LEADER_ROLE_ID: "1380247716596023317",  // ҲƤƦƠ ԼЄƛƊЄƦ 🌟
   STAFF_ROLE_ID: "1447642963189694647",   // Xpro Pro Staff
   PENDING_ROLE_ID: "1447512419705425952",
+  VISITOR_ROLE_NAME: "Visitor", // Role for declined applicants with limited channel access
   ADMIN_USER_ID: "1349048881966747699",
 };
