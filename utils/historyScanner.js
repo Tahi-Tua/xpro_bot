@@ -15,11 +15,15 @@ const FILTER_EXEMPT_SET = new Set(FILTER_EXEMPT_CHANNEL_IDS || []);
 // call to `updateScanState` is enqueued and executed sequentially.
 let scanStateQueue = Promise.resolve();
 
+// In-memory cache of the scan state to avoid stale reads from disk.
+// This is updated atomically within the queue to ensure consistency.
+let cachedScanState = null;
+
 /**
  * Update the saved scan state for a specific channel.  This helper
  * serializes updates to avoid race conditions where concurrent scans
- * overwrite each other's progress.  It reads the latest state from disk,
- * applies the update, and writes it back to disk in a queued manner.
+ * overwrite each other's progress.  It maintains an in-memory cache
+ * that is updated atomically and persisted to disk.
  *
  * @param {string} channelId The ID of the channel that was scanned.
  * @param {string} newestMessageId The ID of the newest message that was scanned.
@@ -28,12 +32,21 @@ let scanStateQueue = Promise.resolve();
 function updateScanState(channelId, newestMessageId) {
   scanStateQueue = scanStateQueue
     .then(() => {
-      const state = loadScanState();
-      state[channelId] = newestMessageId;
-      saveScanState(state);
+      // Load from cache or disk on first access
+      if (cachedScanState === null) {
+        cachedScanState = loadScanState();
+      }
+      
+      // Update the cached state atomically
+      cachedScanState[channelId] = newestMessageId;
+      
+      // Persist to disk
+      saveScanState(cachedScanState);
     })
     .catch((err) => {
       console.error("Failed to update scan state:", err.message);
+      // Invalidate cache on error to force reload on next update
+      cachedScanState = null;
     });
   return scanStateQueue;
 }
