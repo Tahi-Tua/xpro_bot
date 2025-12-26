@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { Events, EmbedBuilder } = require("discord.js");
-const { MODERATION_LOG_CHANNEL_ID, MOD_ROLE_NAME, GENERAL_CHAT_ID, BUG_REPORTS_CHANNEL_ID, FILTER_EXEMPT_CHANNEL_IDS } = require("../config/channels");
+const { MODERATION_LOG_CHANNEL_ID, MOD_ROLE_NAME, GENERAL_CHAT_ID, BUG_REPORTS_CHANNEL_ID, FILTER_EXEMPT_CHANNEL_IDS, FILTER_ENFORCED_CATEGORY_IDS } = require("../config/channels");
 const { hasBypassRole } = require("../utils/bypass");
 const { sendToTelegram } = require("../utils/telegram");
 const { increment: incViolations, getCount: getViolationCount, hasReachedThreshold } = require("../utils/violationStore");
@@ -9,6 +9,7 @@ const { assignReadOnlyRole } = require("../utils/readOnlyRole");
 const { READ_ONLY_THRESHOLD } = require("../config/channels");
 
 const FILTER_EXEMPT_SET = new Set(FILTER_EXEMPT_CHANNEL_IDS || []);
+const FILTER_ENFORCED_CATEGORY_SET = new Set(FILTER_ENFORCED_CATEGORY_IDS || []);
 const badwordsJson = JSON.parse(
   fs.readFileSync(path.join(__dirname, "..", "utils", "badwords.json"), "utf8"),
 ).words;
@@ -358,7 +359,10 @@ module.exports = (client) => {
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot || !message.inGuild()) return;
     if (BUG_REPORTS_CHANNEL_ID && message.channel.id === BUG_REPORTS_CHANNEL_ID) return;
-    if (FILTER_EXEMPT_SET.has(message.channel.id)) return;
+    const isInEnforcedCategory =
+      FILTER_ENFORCED_CATEGORY_SET.has(message.channel.parentId) ||
+      FILTER_ENFORCED_CATEGORY_SET.has(message.channel.parent?.parentId);
+    if (!isInEnforcedCategory && FILTER_EXEMPT_SET.has(message.channel.id)) return;
     if (hasBypassRole(message.member)) return;
 
     const content = message.content || "";
