@@ -89,11 +89,15 @@ const CONFIG = {
   },
 };
 
-// How long to retain violation history and statistics before purging.  Entries
-// older than this period with no new violations will be removed during
-// periodic cleanup.  This prevents unbounded memory usage for long‑running
-// processes.  Here we choose 6 hours, but you can adjust as needed.
-const VIOLATION_HISTORY_RETENTION_MS = 6 * 60 * 60 * 1000;
+// Memory management: Reduce retention to 2 hours (down from 6) to limit memory
+// usage on active servers. This prevents unbounded memory growth while still
+// maintaining sufficient history for moderation tracking.
+const VIOLATION_HISTORY_RETENTION_MS = 2 * 60 * 60 * 1000;
+
+// Maximum number of entries allowed in each Map to prevent memory exhaustion.
+// When limit is reached, oldest entries are evicted. Set to 5000 users which
+// is reasonable for most Discord servers while preventing unbounded growth.
+const MAX_MAP_ENTRIES = 5000;
 
 const DISCORD_INVITE_REGEX = /(discord\.(gg|io|me|li)|discordapp\.com\/invite)\/[a-zA-Z0-9]+/gi;
 const URL_REGEX = /https?:\/\/[^\s]+/gi;
@@ -114,6 +118,8 @@ function getUserData(userId) {
       linkCount: 0,
       linkWindowStart: Date.now(),
     });
+    // Enforce size limit after adding new entry
+    enforceMapSizeLimit(spamData);
   }
   return spamData.get(userId);
 }
@@ -249,6 +255,36 @@ function recordMemberViolation(userId, user, violation) {
   const stats = memberViolationStats.get(userId);
   const typeKey = violation.type;
   stats[typeKey] = (stats[typeKey] || 0) + 1;
+
+  // Enforce size limit on Maps to prevent unbounded memory growth
+  enforceMapSizeLimit(memberViolationHistory);
+  enforceMapSizeLimit(memberViolationStats);
+}
+
+/**
+ * Enforce maximum size limit on a Map by evicting oldest entries (LRU).
+ * This prevents memory exhaustion on high-activity servers.
+ * @param {Map} map - The Map to limit
+ */
+function enforceMapSizeLimit(map) {
+  if (map.size <= MAX_MAP_ENTRIES) return;
+
+  // Find oldest entries by lastUpdated timestamp
+  const entries = Array.from(map.entries());
+  
+  // For Maps without lastUpdated field, sort by insertion order (first entries are oldest)
+  // For Maps with lastUpdated, sort by that timestamp
+  const sortedEntries = entries.sort((a, b) => {
+    const aTime = a[1]?.lastUpdated ?? a[1]?.lastWarning ?? 0;
+    const bTime = b[1]?.lastUpdated ?? b[1]?.lastWarning ?? 0;
+    return aTime - bTime;
+  });
+
+  // Remove oldest 10% of entries to create headroom
+  const toRemove = Math.floor(MAX_MAP_ENTRIES * 0.1);
+  for (let i = 0; i < toRemove; i++) {
+    map.delete(sortedEntries[i][0]);
+  }
 }
 
 function addWarning(userId) {
@@ -262,6 +298,9 @@ function addWarning(userId) {
   }
   history.lastWarning = now;
   warningHistory.set(userId, history);
+  
+  // Enforce size limit to prevent memory exhaustion
+  enforceMapSizeLimit(warningHistory);
   
   return history.count;
 }
