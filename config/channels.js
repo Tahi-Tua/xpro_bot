@@ -41,6 +41,7 @@ module.exports = {
   STAFF_ROLE_ID: "1447642963189694647",   // Xpro Pro Staff
   MOD_ROLE_NAME: process.env.MOD_ROLE_NAME || "Xpro Pro Staff",
   PENDING_ROLE_ID: "1447512419705425952",
+  GUEST_ROLE_ID: "1381603842856321096", // Role automatically assigned to accepted new members
   VISITOR_ROLE_NAME: "Visitor", // Role for declined applicants with limited channel access
   ADMIN_USER_ID: "1349048881966747699",
   

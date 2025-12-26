@@ -1,4 +1,4 @@
-const { MEMBER_ROLE_NAME, MEMBER_ROLE_ID, PENDING_ROLE_ID, VISITOR_ROLE_NAME } = require("../config/channels");
+const { MEMBER_ROLE_NAME, MEMBER_ROLE_ID, PENDING_ROLE_ID, GUEST_ROLE_ID, VISITOR_ROLE_NAME } = require("../config/channels");
 
 const UNVERIFIED_ROLE_NAME = "Unverified";
 const APPLICANT_ROLE_NAME = "Applicant";
@@ -29,6 +29,15 @@ async function cleanupJoinUsMessages(guild, ticketChannel) {
 }
 
 async function applyAcceptRoles(guild, member) {
+  // Add Guest role
+  if (GUEST_ROLE_ID) {
+    const guestRole = guild.roles.cache.get(GUEST_ROLE_ID);
+    if (guestRole && !member.roles.cache.has(guestRole.id)) {
+      await member.roles.add(guestRole).catch(() => {});
+    }
+  }
+
+  // Add Member role
   const memberRole = MEMBER_ROLE_ID
     ? guild.roles.cache.get(MEMBER_ROLE_ID)
     : guild.roles.cache.find((r) => r.name === MEMBER_ROLE_NAME);
@@ -36,11 +45,13 @@ async function applyAcceptRoles(guild, member) {
     await member.roles.add(memberRole).catch(() => {});
   }
 
+  // Remove Applicant role
   const applicantRole = guild.roles.cache.find((r) => r.name === APPLICANT_ROLE_NAME);
   if (applicantRole && member.roles.cache.has(applicantRole.id)) {
     await member.roles.remove(applicantRole).catch(() => {});
   }
 
+  // Remove Unverified role
   const unverifiedRole = guild.roles.cache.find((r) => r.name === UNVERIFIED_ROLE_NAME);
   if (unverifiedRole && member.roles.cache.has(unverifiedRole.id)) {
     await member.roles.remove(unverifiedRole).catch(() => {});
