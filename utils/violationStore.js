@@ -1,9 +1,11 @@
 const fs = require("fs");
+const fsPromises = require("fs").promises;
 const path = require("path");
 
 const STATE_PATH = path.join(__dirname, "..", "data", "violationState.json");
 
 let store = {};
+let saveQueue = Promise.resolve();
 
 function loadStore() {
   try {
@@ -12,6 +14,7 @@ function loadStore() {
       store = JSON.parse(raw || "{}");
     } else {
       store = {};
+      // Initial write can be sync as it's only done once at startup
       fs.writeFileSync(STATE_PATH, JSON.stringify(store, null, 2));
     }
   } catch (err) {
@@ -20,12 +23,23 @@ function loadStore() {
   }
 }
 
+/**
+ * Save the violation store to disk asynchronously.
+ * Uses a queue to serialize save operations and prevent event loop blocking.
+ */
 function saveStore() {
-  try {
-    fs.writeFileSync(STATE_PATH, JSON.stringify(store, null, 2));
-  } catch (err) {
-    console.warn("⚠️ Could not save violation state:", err.message);
-  }
+  saveQueue = saveQueue
+    .then(async () => {
+      try {
+        await fsPromises.writeFile(STATE_PATH, JSON.stringify(store, null, 2), "utf8");
+      } catch (err) {
+        console.warn("⚠️ Could not save violation state:", err.message);
+      }
+    })
+    .catch((err) => {
+      console.warn("⚠️ Unexpected error in save queue:", err.message);
+    });
+  return saveQueue;
 }
 
 function getCount(userId) {
@@ -37,7 +51,7 @@ function increment(userId, amount = 1) {
     store[userId] = { count: 0 };
   }
   store[userId].count += Number(amount) || 0;
-  saveStore();
+  saveStore(); // Fire and forget async save
   return store[userId].count;
 }
 
@@ -46,7 +60,7 @@ function reset(userId) {
     return 0;
   }
   store[userId].count = 0;
-  saveStore();
+  saveStore(); // Fire and forget async save
   return 0;
 }
 
