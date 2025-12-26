@@ -24,9 +24,5 @@ module.exports = {
     }
 
     await interaction.reply(`**${target.tag}** has been unmuted.`);
-
-    if (global.sendModLog) {
-      global.sendModLog(interaction, "Unmute", target, "Manual unmute");
-    }
   }
 };
