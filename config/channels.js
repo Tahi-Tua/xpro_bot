@@ -27,6 +27,16 @@ module.exports = {
     "1380190903616147589",
   ],
 
+  // Private channels/categories excluded from Guest/Member public access
+  PRIVATE_CHANNEL_IDS: [
+    "1448782736620912690",    // STAFF_LOG_CHANNEL_ID
+    "1380197851371409482",    // MODERATION_LOG_CHANNEL_ID
+    "1449540381216735293",    // BOT_LOGS_CHANNEL_ID
+  ],
+  PRIVATE_CATEGORY_IDS: [
+    // Add category IDs here if you have staff-only categories
+  ],
+
   // The name of the role granted to regular members.  This value is used
   // throughout the bot when assigning roles after verification.  Change
   // this to match your server's member role name.
