@@ -22,6 +22,10 @@ module.exports = {
   FILTER_EXEMPT_CHANNEL_IDS: [
     "1381595826505253024",
   ],
+  // Categories where spam/badword filters are always enforced.
+  FILTER_ENFORCED_CATEGORY_IDS: [
+    "1380190903616147589",
+  ],
 
   // The name of the role granted to regular members.  This value is used
   // throughout the bot when assigning roles after verification.  Change
