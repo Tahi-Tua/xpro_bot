@@ -9,14 +9,12 @@ const { assignReadOnlyRole } = require("../utils/readOnlyRole");
 const { READ_ONLY_THRESHOLD } = require("../config/channels");
 
 const FILTER_EXEMPT_SET = new Set(FILTER_EXEMPT_CHANNEL_IDS || []);
-
-    console.warn("?? badwords-list.txt not found or unreadable:", err.message);
 const badwordsJson = JSON.parse(
   fs.readFileSync(path.join(__dirname, "..", "utils", "badwords.json"), "utf8"),
 ).words;
 
 function loadTxtBadwords() {
-    console.warn("?? badwords-list.txt not found or unreadable:", err.message);
+  const txtPath = path.join(__dirname, "..", "utils", "badwords-list.txt");
   try {
     const raw = fs.readFileSync(txtPath, "utf8");
     return raw
