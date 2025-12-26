@@ -7,7 +7,7 @@
 
 require("dotenv").config();
 const { Client, GatewayIntentBits, PermissionFlagsBits, ChannelType } = require("discord.js");
-const { MEMBER_ROLE_NAME, MEMBER_ROLE_ID } = require("./config/channels");
+const { MEMBER_ROLE_NAME, MEMBER_ROLE_ID, GENERAL_CHAT_ID } = require("./config/channels");
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
@@ -73,9 +73,16 @@ client.once("ready", async () => {
     let skipped = 0;
 
     for (const [, channel] of textChannels) {
-      // Skip certain channels
+      // Skip certain channels by name
       if (SKIP_CHANNELS.has(channel.name.toLowerCase())) {
         console.log(`??  Skipped #${channel.name} (system channel)`);
+        skipped++;
+        continue;
+      }
+
+      // Skip general chat to avoid granting attachments/links there (policy enforced separately)
+      if (channel.id === GENERAL_CHAT_ID) {
+        console.log(`⏭️  Skipped #${channel.name} (GENERAL_CHAT_ID)`);
         skipped++;
         continue;
       }
