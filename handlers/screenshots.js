@@ -23,13 +23,20 @@ module.exports = (client) => {
     const hasAttachment =
       message.attachments.size > 0 &&
       message.attachments.some((att) => {
-        const type = att.contentType || "";
-        return type.startsWith("image/") || type.startsWith("video/");
+        const type = (att.contentType || "").toLowerCase();
+        if (type.startsWith("image/") || type.startsWith("video/")) return true;
+
+        const name = (att.name || "").toLowerCase();
+        const url = (att.url || "").toLowerCase();
+        return /\.(png|jpe?g|gif|webp|bmp|tiff|mp4|mov|webm|mkv)$/.test(
+          name || url,
+        );
       });
     const hasMediaEmbed =
       message.embeds.length > 0 &&
       message.embeds.some(
-        (e) => e.image || e.thumbnail || e.video || e.type === "image",
+        (e) =>
+          e.image || e.video || e.type === "image" || e.type === "video",
       );
     const hasSticker = message.stickers?.size > 0;
 
