@@ -4,15 +4,15 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const express = require("express");              // ← ajouté
-const app = express();                           // ← ajouté
+const express = require("express");              // added
+const app = express();                           // added
 
-// Petit endpoint pour Render / monitoring
+// Small endpoint for Render / monitoring
 app.get("/", (req, res) => {
   res.send("xpro_bot is running");
 });
 
-// Render donne le port dans process.env.PORT
+// Render provides the port in process.env.PORT
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🌐 HTTP server listening on port ${PORT}`);
@@ -99,7 +99,7 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
-// captureRejections doit être passé au constructeur ou défini avant
+// captureRejections must be set on the constructor or defined before
 client.captureRejections = true;
 client.commands = new Collection();
 
@@ -223,9 +223,9 @@ if (ENABLE_TELEGRAM_FILE_NOTIFIER) {
 // Events / Bot logic
 // ============================================================================
 
-// TODO : ici, garde tous tes events existants (ready, interactionCreate,
-// messageCreate, guildMemberAdd, etc.) comme ils étaient dans ton fichier.
-// Exemple minimal pour ready :
+// TODO: keep all your existing events here (ready, interactionCreate,
+// messageCreate, guildMemberAdd, etc.) as they were in your file.
+// Minimal example for ready:
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`✅ Logged in as ${c.user.tag}`);
@@ -246,8 +246,8 @@ client.once(Events.ClientReady, async (c) => {
   }
 });
 
-// Exemple minimal pour interactionCreate (slash commands)
-// Garde ton vrai handler, ce n’est qu’un squelette.
+// Minimal example for interactionCreate (slash commands)
+// Keep your real handler; this is just a skeleton.
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 

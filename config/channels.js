@@ -18,6 +18,11 @@ module.exports = {
   SUGGESTION_CHANNEL_ID: "1381583643834581013",
   HALL_OF_FAME_CHANNEL_ID: "1380349437070540841",
 
+  // Channels excluded from spam/badwords filters and scans.
+  FILTER_EXEMPT_CHANNEL_IDS: [
+    "1381595826505253024",
+  ],
+
   // The name of the role granted to regular members.  This value is used
   // throughout the bot when assigning roles after verification.  Change
   // this to match your server's member role name.
@@ -30,6 +35,7 @@ module.exports = {
   // Role IDs for ticket management (Leaders and Staff)
   LEADER_ROLE_ID: "1380247716596023317",  // ҲƤƦƠ ԼЄƛƊЄƦ 🌟
   STAFF_ROLE_ID: "1447642963189694647",   // Xpro Pro Staff
+  MOD_ROLE_NAME: process.env.MOD_ROLE_NAME || "Xpro Pro Staff",
   PENDING_ROLE_ID: "1447512419705425952",
   VISITOR_ROLE_NAME: "Visitor", // Role for declined applicants with limited channel access
   ADMIN_USER_ID: "1349048881966747699",

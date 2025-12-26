@@ -24,13 +24,13 @@ function formatTag(member) {
   if (member.user?.discriminator && member.user.discriminator !== "0") {
     return `${member.user.username}#${member.user.discriminator}`;
   }
-  return member.user?.tag || member.user?.username || "Utilisateur";
+  return member.user?.tag || member.user?.username || "User";
 }
 
 async function ensureChannel(guild) {
   const category = await guild.channels.fetch(ONLINE_CATEGORY_ID).catch(() => null);
   if (!category || category.type !== ChannelType.GuildCategory) {
-    console.log("? ONLINE: Categorie introuvable ou invalide:", ONLINE_CATEGORY_ID);
+    console.log("? ONLINE: Category not found or invalid:", ONLINE_CATEGORY_ID);
     return null;
   }
 
@@ -46,7 +46,7 @@ async function ensureChannel(guild) {
       name: ONLINE_CHANNEL_NAME,
       type: ChannelType.GuildText,
       parent: category.id,
-      topic: "Liste des membres actuellement en ligne",
+      topic: "List of members currently online",
       permissionOverwrites: [
         {
           id: guild.roles.everyone.id,
@@ -64,7 +64,7 @@ async function ensureChannel(guild) {
         },
       ],
     });
-    console.log(`? ONLINE: Salon cree sous la categorie ${category.name}`);
+    console.log(`? ONLINE: Channel created under the category ${category.name}`);
   }
 
   return channel;
@@ -78,7 +78,7 @@ async function findOrCreateMessage(channel) {
 
   if (!target) {
     target = await channel
-      .send({ content: MARKER, embeds: [new EmbedBuilder().setDescription("Initialisation...")] })
+      .send({ content: MARKER, embeds: [new EmbedBuilder().setDescription("Initializing...")] })
       .catch(() => null);
   }
 
@@ -96,8 +96,8 @@ async function updateOnlineMessage(guild) {
     if (members.size === 0) {
       const embed = new EmbedBuilder()
         .setColor(0x2ecc71)
-        .setTitle("Membres en ligne")
-        .setDescription("⏳ Données de présence non encore disponibles. Réessayez dans quelques secondes.")
+        .setTitle("Online members")
+        .setDescription("? Presence data not yet available. Try again in a few seconds.")
         .setTimestamp();
 
       state.message = state.message || (await findOrCreateMessage(state.channel));
@@ -124,8 +124,8 @@ async function updateOnlineMessage(guild) {
       embeds.push(
         new EmbedBuilder()
           .setColor(0x2ecc71)
-          .setTitle("Membres en ligne (0)")
-          .setDescription("Personne n'est en ligne pour le moment.")
+          .setTitle("Online members (0)")
+          .setDescription("No one is online at the moment.")
           .setTimestamp(),
       );
     } else {
@@ -143,7 +143,7 @@ async function updateOnlineMessage(guild) {
       });
 
       if (cards.length > 0) {
-        cards[0].setFooter({ text: `Total en ligne: ${membersArr.length}` });
+        cards[0].setFooter({ text: `Total online: ${membersArr.length}` });
       }
 
       embeds.push(...cards);
@@ -153,7 +153,7 @@ async function updateOnlineMessage(guild) {
         embeds.push(
           new EmbedBuilder()
             .setColor(0x2ecc71)
-            .setDescription(`🟢 ... et ${remaining} autres membres en ligne`)
+            .setDescription(`🟢 ... et ${remaining} autres Online members`)
             .setTimestamp(),
         );
       }
@@ -169,7 +169,7 @@ async function updateOnlineMessage(guild) {
       (Math.random() * 2000); // jitter
     state.nextFetchAt = Date.now() + retry;
     console.log(
-      `? ONLINE: Erreur lors de la mise a jour des presences (${err?.message || err}); nouvelle tentative dans ${Math.round(retry / 1000)}s`,
+      `? ONLINE: Error updating presences (${err?.message || err}); nouvelle tentative dans ${Math.round(retry / 1000)}s`,
     );
   }
 }
@@ -187,7 +187,7 @@ function scheduleUpdate() {
 async function init(client) {
   const category = await client.channels.fetch(ONLINE_CATEGORY_ID).catch(() => null);
   if (!category || category.type !== ChannelType.GuildCategory) {
-    console.log("? ONLINE: Categorie introuvable ou invalide:", ONLINE_CATEGORY_ID);
+    console.log("? ONLINE: Category not found or invalid:", ONLINE_CATEGORY_ID);
     return;
   }
 

@@ -46,13 +46,13 @@ module.exports = (client) => {
       const safeRoles = escapeTelegramMarkdown(roles);
       const safeGuild = escapeTelegramMarkdown(member.guild.name);
       const telegramMessage =
-        `❌ *Membre parti du Discord!*\n\n` +
-        `👤 *Nom:* ${safeName}\n` +
-        `🆔 *ID:* \`${member.user.id}\`\n` +
-        `🕒 *Temps sur le serveur:* ${diffDays} jours\n` +
-        `🎭 *Anciens rôles:* ${safeRoles}\n` +
-        `🏰 *Serveur:* ${safeGuild}\n` +
-        `👥 *Membres restants:* ${member.guild.memberCount}`;
+        `? *Member left the Discord!*\n\n` +
+        `?? *Name:* ${safeName}\n` +
+        `?? *ID:* \`${member.user.id}\`\n` +
+        `?? *Time on server:* ${diffDays} days\n` +
+        `?? *Previous roles:* ${safeRoles}\n` +
+        `?? *Server:* ${safeGuild}\n` +
+        `?? *Members remaining:* ${member.guild.memberCount}`;
 
       // Explicitly specify Markdown parse mode to preserve formatting
       sendToTelegram(telegramMessage, { parse_mode: 'Markdown' });

@@ -315,7 +315,7 @@ _You will be notified when files are modified._
       if (!this.isAllowedChat(msg.chat.id)) return;
 
       const waiting = await this.bot
-        .sendMessage(msg.chat.id, "🔍 Analyse de l'image en cours...")
+        .sendMessage(msg.chat.id, "?? Analyzing image...")
         .catch(() => null);
 
       try {
@@ -328,7 +328,7 @@ _You will be notified when files are modified._
         console.error("Telegram image analysis failed:", err.message);
         await this.bot.sendMessage(
           msg.chat.id,
-          "⚠️ Impossible d'analyser cette image pour l'instant."
+          "?? Unable to analyze this image right now."
         );
       } finally {
         if (waiting) {
@@ -460,7 +460,7 @@ _You will be notified when files are modified._
           }
 
           // Send info message first
-          const message = `📝 *Fichier modifié*\n\n📂 *Chemin:* \`${relativeDir || 'root'}/${fileName}\`\n📦 *Taille:* ${fileSizeKB} Ko\n⏰ *Heure:* ${timestamp}`;
+          const message = `?? *File modified*\n\n?? *Path:* \`${relativeDir || 'root'}/${fileName}\`\n?? *Size:* ${fileSizeKB} KB\n? *Time:* ${timestamp}`;
           const textMsg = await this.bot.sendMessage(CHAT_ID, message, { parse_mode: "Markdown" });
           
           // Then send file without caption (will appear right below)
@@ -480,11 +480,11 @@ _You will be notified when files are modified._
           console.log(`✅ File sent to Telegram: ${fileName} (${fileSize} bytes)`);
         } catch (fileErr) {
           console.error(`❌ Failed to send file ${fileName}:`, fileErr.message);
-          await this.bot.sendMessage(CHAT_ID, `⚠️ *Erreur d'envoi*\n\nFichier: \`${fileName}\`\nErreur: ${fileErr.message}`, { parse_mode: "Markdown" });
+          await this.bot.sendMessage(CHAT_ID, `?? *Send error*\n\nFile: \`${fileName}\`\nError: ${fileErr.message}`, { parse_mode: "Markdown" });
         }
       } else {
         // File too large, send info only
-        const message = `📝 *Fichier modifié* ⚠️ *(Trop volumineux)*\n\n📂 \`${relativeDir || 'root'}/${fileName}\`\n📦 ${fileSizeKB} Ko\n⏰ ${timestamp}`;
+        const message = `?? *File modified* ?? *(Too large)*\n\n?? \`${relativeDir || 'root'}/${fileName}\`\n?? ${fileSizeKB} KB\n? ${timestamp}`;
         
         await this.bot.sendMessage(CHAT_ID, message, { parse_mode: "Markdown" });
 

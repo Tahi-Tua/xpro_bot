@@ -1,12 +1,14 @@
 const fs = require("fs");
 const path = require("path");
 const { EmbedBuilder } = require("discord.js");
-const { MODERATION_LOG_CHANNEL_ID, MOD_ROLE_NAME } = require("../config/channels");
+const { MODERATION_LOG_CHANNEL_ID, MOD_ROLE_NAME, FILTER_EXEMPT_CHANNEL_IDS } = require("../config/channels");
 const { containsBadWord, findBadWords } = require("../handlers/badwords");
 const { detectSpamViolations } = require("../handlers/spam");
 const { hasBypassRole } = require("../utils/bypass");
 
 const scanStateFile = path.join(__dirname, "../data/scanState.json");
+
+const FILTER_EXEMPT_SET = new Set(FILTER_EXEMPT_CHANNEL_IDS || []);
 
 // A simple promise-based queue to serialize updates to the scan state file.
 // Without this, concurrent scans may overwrite each other's progress.  Each
@@ -177,6 +179,15 @@ async function sendMemberScanReport(guild, user, violations) {
 
 async function scanChannel(channel, options = {}) {
   const { maxMessages = 500, deleteViolations = false, logChannel = null, guild = null } = options;
+
+  if (FILTER_EXEMPT_SET.has(channel.id)) {
+    return {
+      scanned: 0,
+      badwords: [],
+      spam: [],
+      errors: [],
+    };
+  }
   
   const state = loadScanState();
   const lastScannedId = state[channel.id];

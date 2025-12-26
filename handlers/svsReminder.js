@@ -8,8 +8,8 @@ const {
 } = require("discord.js");
 const { SVS_REMINDER_CHANNEL_ID, SVS_ROLE_ID } = require("../config/channels");
 
-// Horaires locaux souhaités (CET) : 4:00, 7:30, 11:30, 16:00, 19:30, 23:30
-// Ici on utilise l'heure locale du serveur (pas de conversion UTC)
+// Desired local times (CET): 2:30, 7:30, 11:30, 16:00, 19:30, 23:30
+// We use the server's local time (no UTC conversion)
 const SVS_TIMES = [
   { hour: 2, minute: 30 },   // 2:30
   { hour: 6, minute: 30 },  // 06:30

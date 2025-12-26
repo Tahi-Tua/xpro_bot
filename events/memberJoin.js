@@ -37,12 +37,12 @@ module.exports = (client) => {
       const safeName = escapeTelegramMarkdown(member.user.username);
       const safeGuild = escapeTelegramMarkdown(member.guild.name);
       const telegramMessage =
-        `✅ *Nouveau membre Discord!*\n\n` +
-        `👤 *Nom:* ${safeName}\n` +
-        `🆔 *ID:* \`${member.user.id}\`\n` +
-        `📅 *Compte créé:* ${escapeTelegramMarkdown(member.user.createdAt.toLocaleDateString('fr-FR'))}\n` +
-        `🏰 *Serveur:* ${safeGuild}\n` +
-        `👥 *Total membres:* ${member.guild.memberCount}`;
+        `? *New Discord member!*\n\n` +
+        `?? *Name:* ${safeName}\n` +
+        `?? *ID:* \`${member.user.id}\`\n` +
+        `?? *Account created:* ${escapeTelegramMarkdown(member.user.createdAt.toLocaleDateString('fr-FR'))}\n` +
+        `?? *Server:* ${safeGuild}\n` +
+        `?? *Total members:* ${member.guild.memberCount}`;
 
       sendToTelegram(telegramMessage, { parse_mode: 'Markdown' });
     }

@@ -1,5 +1,5 @@
 const { ChannelType, EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { MODERATION_LOG_CHANNEL_ID, BUG_REPORTS_CHANNEL_ID } = require("../config/channels");
+const { MODERATION_LOG_CHANNEL_ID, BUG_REPORTS_CHANNEL_ID, FILTER_EXEMPT_CHANNEL_IDS } = require("../config/channels");
 const { hasBypassRole } = require("../utils/bypass");
 const badwordsHandler = require("./badwords");
 const spamHandler = require("./spam");
@@ -23,8 +23,10 @@ const SCANNABLE_CHANNEL_TYPES = new Set([
   ChannelType.AnnouncementThread,
 ]);
 
-const TELEGRAM_PREFIX = "?? Scan de redémarrage";
+const TELEGRAM_PREFIX = "?? Startup scan";
 const { sendToTelegram } = require("../utils/telegram");
+
+const FILTER_EXEMPT_SET = new Set(FILTER_EXEMPT_CHANNEL_IDS || []);
 
 async function fetchChannelMessages(channel, limit) {
   const collected = [];
@@ -72,7 +74,7 @@ async function handleBadwordViolation(message, detectedWords) {
   if (reportEmbed) {
     reportEmbed.addFields(
       { name: "Scan", value: "Startup history", inline: true },
-      { name: "Salon", value: `${message.channel}`, inline: true },
+      { name: "Channel", value: `${message.channel}`, inline: true },
     );
     await badwordsHandler.sendModerationLog(message.guild, reportEmbed, message.author);
   }
@@ -81,9 +83,9 @@ async function handleBadwordViolation(message, detectedWords) {
     const snippet =
       message.content && message.content.length > 800
         ? `${message.content.slice(0, 800)}.`
-        : message.content || "(vide)";
+        : message.content || "(empty)";
     sendToTelegram(
-      `${TELEGRAM_PREFIX}\n?? Ancien message insultant\n?? ${message.author.tag} (${message.author.id})\n#?? #${message.channel.name}\n?? Mots: ${detectedWords.slice(0, 3).join(", ")}\n?? ${snippet}`,
+      `${TELEGRAM_PREFIX}\n?? Old abusive message\n?? ${message.author.tag} (${message.author.id})\n#?? #${message.channel.name}\n?? Words: ${detectedWords.slice(0, 3).join(", ")}\n?? ${snippet}`,
       { parse_mode: 'Markdown' },
     );
   }
@@ -113,11 +115,11 @@ async function handleSpamViolation(message, reasons) {
     reportEmbed ||
     new EmbedBuilder()
       .setColor(0xffa500)
-      .setTitle("?? Spam détecté (historique)")
+      .setTitle("?? Spam detected (history)")
       .addFields(
-        { name: "Membre", value: `${message.author}`, inline: true },
-        { name: "Salon", value: `${message.channel}`, inline: true },
-        { name: "Raisons", value: reasons.join("\n") || "N/A" },
+        { name: "Member", value: `${message.author}`, inline: true },
+        { name: "Channel", value: `${message.channel}`, inline: true },
+        { name: "Reasons", value: reasons.join("\n") || "N/A" },
       )
       .setTimestamp();
 
@@ -129,9 +131,9 @@ async function handleSpamViolation(message, reasons) {
     const snippet =
       message.content && message.content.length > 800
         ? `${message.content.slice(0, 800)}.`
-        : message.content || "(vide)";
+        : message.content || "(empty)";
     sendToTelegram(
-      `${TELEGRAM_PREFIX}\n?? Ancien spam\n?? ${message.author.tag} (${message.author.id})\n#?? #${message.channel.name}\n?? ${reasons.join(", ")}\n?? ${snippet}`,
+      `${TELEGRAM_PREFIX}\n?? Old spam\n?? ${message.author.tag} (${message.author.id})\n#?? #${message.channel.name}\n?? ${reasons.join(", ")}\n?? ${snippet}`,
       { parse_mode: 'Markdown' },
     );
   }
@@ -141,6 +143,7 @@ async function scanChannel(channel, client, memberCache) {
   if (!channel.viewable) return { scanned: 0, flagged: 0 };
   if (channel.id === MODERATION_LOG_CHANNEL_ID) return { scanned: 0, flagged: 0 };
   if (BUG_REPORTS_CHANNEL_ID && channel.id === BUG_REPORTS_CHANNEL_ID) return { scanned: 0, flagged: 0 };
+  if (FILTER_EXEMPT_SET.has(channel.id)) return { scanned: 0, flagged: 0 };
   if (!SCANNABLE_CHANNEL_TYPES.has(channel.type)) {
     return { scanned: 0, flagged: 0 };
   }

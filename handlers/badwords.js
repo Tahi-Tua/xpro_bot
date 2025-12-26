@@ -1,20 +1,22 @@
 const fs = require("fs");
 const path = require("path");
 const { Events, EmbedBuilder } = require("discord.js");
-const { MODERATION_LOG_CHANNEL_ID, MOD_ROLE_NAME, GENERAL_CHAT_ID, BUG_REPORTS_CHANNEL_ID } = require("../config/channels");
+const { MODERATION_LOG_CHANNEL_ID, MOD_ROLE_NAME, GENERAL_CHAT_ID, BUG_REPORTS_CHANNEL_ID, FILTER_EXEMPT_CHANNEL_IDS } = require("../config/channels");
 const { hasBypassRole } = require("../utils/bypass");
 const { sendToTelegram } = require("../utils/telegram");
 const { increment: incViolations, getCount: getViolationCount, hasReachedThreshold } = require("../utils/violationStore");
 const { assignReadOnlyRole } = require("../utils/readOnlyRole");
 const { READ_ONLY_THRESHOLD } = require("../config/channels");
 
-// Load base list (JSON) + optional extra list from badwords-list.txt
+const FILTER_EXEMPT_SET = new Set(FILTER_EXEMPT_CHANNEL_IDS || []);
+
+    console.warn("?? badwords-list.txt not found or unreadable:", err.message);
 const badwordsJson = JSON.parse(
   fs.readFileSync(path.join(__dirname, "..", "utils", "badwords.json"), "utf8"),
 ).words;
 
 function loadTxtBadwords() {
-  const txtPath = path.join(__dirname, "..", "utils", "badwords-list.txt");
+    console.warn("?? badwords-list.txt not found or unreadable:", err.message);
   try {
     const raw = fs.readFileSync(txtPath, "utf8");
     return raw
@@ -22,7 +24,7 @@ function loadTxtBadwords() {
       .map((w) => w.trim())
       .filter((w) => w && !w.startsWith("#"));
   } catch (err) {
-    console.warn("⚠️ badwords-list.txt non trouvé ou illisible:", err.message);
+    console.warn("?? badwords-list.txt not found or unreadable:", err.message);
     return [];
   }
 }
@@ -43,7 +45,7 @@ badwords.forEach((entry) => {
   }
 });
 
-// Helpers pour matcher uniquement les mots exacts présents dans les listes
+// Helpers to match only exact words present in the lists
 const stripDiacritics = (str) => str.normalize("NFD").replace(/\p{Diacritic}+/gu, "");
 const ZERO_WIDTH_REGEX = /[\u200B-\u200D\uFEFF]/g;
 // Keep spaces but strip obfuscation symbols like "***" so "p**n" stays "pn"
@@ -58,7 +60,7 @@ const normalizeSymbols = (str) =>
 
 const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// Table de correspondance exacte (word -> original du fichier) après normalisation simple
+// Exact lookup table (word -> original from file) after simple normalization
 const normalizedBadwords = new Set();
 const badwordLookup = new Map();
 singleWordList.forEach((word) => {
@@ -358,7 +360,8 @@ module.exports = (client) => {
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot || !message.inGuild()) return;
     if (BUG_REPORTS_CHANNEL_ID && message.channel.id === BUG_REPORTS_CHANNEL_ID) return;
-    if (message.channel.id === "1381595826505253024") return;
+    if (FILTER_EXEMPT_SET.has(message.channel.id)) return;
+    if (hasBypassRole(message.member)) return;
 
     const content = message.content || "";
     if (!containsBadWord(content)) return;
@@ -394,7 +397,7 @@ module.exports = (client) => {
     if (typeof sendToTelegram === 'function') {
       const safeContent = content.length > 800 ? `${content.slice(0, 800)}…` : content;
       sendToTelegram(
-        `🚨 Insulte détectée\n👤 ${message.author.tag} (${message.author.id})\n#️⃣ #${message.channel.name}\n🚩 Mots: ${detectedWords.slice(0, 3).join(", ")}\n💬 ${safeContent || "(vide)"}`,
+        `?? Insult detected\n?? ${message.author.tag} (${message.author.id})\n#?? #${message.channel.name}\n?? Words: ${detectedWords.slice(0, 3).join(", ")}\n?? ${safeContent || "(empty)"}`,
         { parse_mode: 'Markdown' }
       );
     }

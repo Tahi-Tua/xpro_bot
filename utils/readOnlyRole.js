@@ -41,15 +41,15 @@ async function assignReadOnlyRole(member, totalViolations) {
 
     const dmEmbed = new EmbedBuilder()
       .setColor(0x5865f2)
-      .setTitle("🔒 Mode Lecture Seule activé")
+      .setTitle("?? Read-only mode enabled")
       .setDescription(
-        `Tu as atteint **${totalViolations}** violations.\n\n` +
-        `Tu peux lire les salons et réagir aux messages, mais tu ne peux plus envoyer de messages pour le moment.\n` +
-        `Si tu penses que c'est une erreur, contacte le staff.`
+        `You have reached **${totalViolations}** violations.\n\n` +
+        `You can read channels and react to messages, but you cannot send messages for now.\n` +
+        `If you think this is a mistake, contact the staff.`
       )
       .addFields(
-        { name: "Serveur", value: guild.name, inline: true },
-        { name: "Seuil", value: `${READ_ONLY_THRESHOLD}`, inline: true }
+        { name: "Server", value: guild.name, inline: true },
+        { name: "Threshold", value: `${READ_ONLY_THRESHOLD}`, inline: true }
       )
       .setTimestamp();
 
@@ -57,11 +57,11 @@ async function assignReadOnlyRole(member, totalViolations) {
 
     const modEmbed = new EmbedBuilder()
       .setColor(0x2f3136)
-      .setTitle("🔒 Rôle 'LECTURE SEULE' attribué")
+      .setTitle("?? \"READ ONLY\" role assigned")
       .addFields(
-        { name: "Membre", value: `${member.user.tag} (${member.id})`, inline: true },
+        { name: "Member", value: `${member.user.tag} (${member.id})`, inline: true },
         { name: "Violations", value: `${totalViolations}`, inline: true },
-        { name: "Rôle", value: READ_ONLY_ROLE_NAME, inline: true }
+        { name: "Role", value: READ_ONLY_ROLE_NAME, inline: true }
       )
       .setTimestamp();
 
@@ -69,7 +69,7 @@ async function assignReadOnlyRole(member, totalViolations) {
 
     if (typeof sendToTelegram === "function") {
       sendToTelegram(
-        `🔒 Lecture seule attribuée\n👤 ${member.user.tag} (${member.id})\n🎚️ Violations: ${totalViolations}`,
+        `?? Read-only role assigned\n?? ${member.user.tag} (${member.id})\n??? Violations: ${totalViolations}`,
         { parse_mode: "Markdown" }
       );
     }

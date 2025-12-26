@@ -1,11 +1,13 @@
 const { Events, EmbedBuilder } = require("discord.js");
-const { GENERAL_CHAT_ID, BUG_REPORTS_CHANNEL_ID } = require("../config/channels");
+const { GENERAL_CHAT_ID, BUG_REPORTS_CHANNEL_ID, FILTER_EXEMPT_CHANNEL_IDS } = require("../config/channels");
 const { hasBypassRole } = require("../utils/bypass");
 const { sendModerationLog } = require("./badwords");
 const { increment: incViolations, getCount: getViolationCount, hasReachedThreshold } = require("../utils/violationStore");
 const { assignReadOnlyRole } = require("../utils/readOnlyRole");
 const { READ_ONLY_THRESHOLD } = require("../config/channels");
 const { sendToTelegram } = require("../utils/telegram");
+
+const FILTER_EXEMPT_SET = new Set(FILTER_EXEMPT_CHANNEL_IDS || []);
 
 // IDs allowed to use @everyone/@here without triggering spam
 const ALLOWED_GLOBAL_MENTION_IDS = new Set([
@@ -19,7 +21,7 @@ const normalizeLeetspeak = (str) =>
   str
     .replace(/0/g, "o")
     .replace(/[1l!|]/g, "i")
-    .replace(/3|€/g, "e")
+    .replace(/[3?]/g, "e")
     .replace(/4|@/g, "a")
     .replace(/5|\$/g, "s")
     .replace(/7/g, "t")
@@ -463,7 +465,7 @@ module.exports = (client) => {
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot || !message.inGuild()) return;
     if (BUG_REPORTS_CHANNEL_ID && message.channel.id === BUG_REPORTS_CHANNEL_ID) return;
-    if (message.channel.id === "1381595826505253024") return;
+    if (FILTER_EXEMPT_SET.has(message.channel.id)) return;
     if (hasBypassRole(message.member)) return;
     
     const now = Date.now();
@@ -558,15 +560,12 @@ module.exports = (client) => {
         { name: "Channel", value: `${message.channel}`, inline: true },
         { name: "Warnings", value: `${warningCount}/${CONFIG.punishment.warningsBeforeMute}`, inline: true },
         { name: "Violations", value: violations.join("\n") },
-        { name: "Action", value: shouldDeleteMessage ? punishment : `${punishment} (message conservé)` },
+        { name: "Action", value: shouldDeleteMessage ? punishment : `${punishment} (message kept)` },
         { name: "Message Preview", value: content.substring(0, 200) || "(empty)" }
       )
       .setTimestamp();
     
     await sendModerationLog(message.guild, logEmbed, message.author);
-    
-    console.log(`🚨 Spam: ${message.author.tag} - ${violations.join(", ")} - ${punishment}`);
-
     // Check for read-only threshold and assign role if needed
     try {
       const total = getViolationCount(message.author.id);
@@ -580,7 +579,7 @@ module.exports = (client) => {
     if (typeof sendToTelegram === 'function') {
       const snippet = content.length > 800 ? `${content.slice(0, 800)}…` : content;
       sendToTelegram(
-        `🚨 Spam détecté\n👤 ${message.author.tag} (${message.author.id})\n#️⃣ #${message.channel.name}\n⚠️ ${violations.join(", ")}\n🛠️ Action: ${punishment}\n💬 ${snippet || "(vide)"}`,
+        `?? Spam detected\n?? ${message.author.tag} (${message.author.id})\n#?? #${message.channel.name}\n?? ${violations.join(", ")}\n??? Action: ${punishment}\n?? ${snippet || "(empty)"}`,
         { parse_mode: 'Markdown' }
       );
     }
