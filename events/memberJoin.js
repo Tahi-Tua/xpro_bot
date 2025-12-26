@@ -1,4 +1,4 @@
-const { WELCOME_CHANNEL_ID } = require("../config/channels");
+const { WELCOME_CHANNEL_ID, GUEST_ROLE_ID } = require("../config/channels");
 const { getWelcomePayload } = require("../handlers/welcome");
 const { sendToTelegram } = require("../utils/telegram");
 
@@ -27,6 +27,19 @@ module.exports = (client) => {
       console.warn(
         `⚠️ ${UNVERIFIED_ROLE_NAME} role not found. Create it in Discord server settings.`
       );
+    }
+
+    // Remove Guest role if it was auto-assigned by Discord (should only get Guest after acceptance)
+    if (GUEST_ROLE_ID) {
+      const guestRole = member.guild.roles.cache.get(GUEST_ROLE_ID);
+      if (guestRole && member.roles.cache.has(guestRole.id)) {
+        try {
+          await member.roles.remove(guestRole);
+          console.log(`✅ Removed Guest role from ${member.user.tag} (should only get after acceptance)`);
+        } catch (err) {
+          console.error(`❌ Cannot remove Guest role:`, err.message);
+        }
+      }
     }
 
     const payload = getWelcomePayload(member);
