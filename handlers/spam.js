@@ -1,5 +1,5 @@
 const { Events, EmbedBuilder } = require("discord.js");
-const { GENERAL_CHAT_ID, BUG_REPORTS_CHANNEL_ID, FILTER_EXEMPT_CHANNEL_IDS } = require("../config/channels");
+const { GENERAL_CHAT_ID, BUG_REPORTS_CHANNEL_ID, FILTER_EXEMPT_CHANNEL_IDS, FILTER_ENFORCED_CATEGORY_IDS } = require("../config/channels");
 const { hasBypassRole } = require("../utils/bypass");
 const { sendModerationLog } = require("./badwords");
 const { increment: incViolations, getCount: getViolationCount, hasReachedThreshold } = require("../utils/violationStore");
@@ -8,6 +8,7 @@ const { READ_ONLY_THRESHOLD } = require("../config/channels");
 const { sendToTelegram } = require("../utils/telegram");
 
 const FILTER_EXEMPT_SET = new Set(FILTER_EXEMPT_CHANNEL_IDS || []);
+const FILTER_ENFORCED_CATEGORY_SET = new Set(FILTER_ENFORCED_CATEGORY_IDS || []);
 
 // IDs allowed to use @everyone/@here without triggering spam
 const ALLOWED_GLOBAL_MENTION_IDS = new Set([
@@ -465,7 +466,10 @@ module.exports = (client) => {
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot || !message.inGuild()) return;
     if (BUG_REPORTS_CHANNEL_ID && message.channel.id === BUG_REPORTS_CHANNEL_ID) return;
-    if (FILTER_EXEMPT_SET.has(message.channel.id)) return;
+    const isInEnforcedCategory =
+      FILTER_ENFORCED_CATEGORY_SET.has(message.channel.parentId) ||
+      FILTER_ENFORCED_CATEGORY_SET.has(message.channel.parent?.parentId);
+    if (!isInEnforcedCategory && FILTER_EXEMPT_SET.has(message.channel.id)) return;
     if (hasBypassRole(message.member)) return;
     
     const now = Date.now();
