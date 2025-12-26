@@ -183,7 +183,8 @@ class TelegramFileNotifier {
       return;
     }
 
-    console.log(`🔍 Initializing Telegram notifier with token: ${BOT_TOKEN.slice(0, 10)}... and chat ID: ${CHAT_ID}`);
+    // Security: Never log tokens or credentials, even partially. Only confirm they're configured.
+    console.log(`🔍 Initializing Telegram notifier (token: configured, chat ID: ${CHAT_ID ? 'configured' : 'missing'})`);
 
     try {
       // File notifier only (no inbound polling handlers)
