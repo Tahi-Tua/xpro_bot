@@ -10,6 +10,28 @@ const { READ_ONLY_THRESHOLD } = require("../config/channels");
 
 const FILTER_EXEMPT_SET = new Set(FILTER_EXEMPT_CHANNEL_IDS || []);
 const FILTER_ENFORCED_CATEGORY_SET = new Set(FILTER_ENFORCED_CATEGORY_IDS || []);
+
+// Telegram message length limit (4096 chars). Use 4000 for safety margin.
+const TELEGRAM_MAX_LENGTH = 4000;
+
+/**
+ * Build a Telegram message respecting the 4096 character limit.
+ * @param {Object} parts - Message parts
+ * @returns {string} Message under TELEGRAM_MAX_LENGTH
+ */
+function buildTelegramMessage(parts) {
+  const { prefix = '', author = '', authorId = '', channel = '', words = '', content = '' } = parts;
+  
+  const metadata = `${prefix}\n👤 ${author.slice(0, 50)} (${authorId})\n#️⃣ #${channel.slice(0, 50)}${words ? `\n🔴 Words: ${words.slice(0, 150)}` : ''}\n📄 `;
+  
+  const remainingSpace = TELEGRAM_MAX_LENGTH - metadata.length - 10;
+  const truncatedContent = remainingSpace > 50 
+    ? content.slice(0, remainingSpace) + (content.length > remainingSpace ? '…' : '')
+    : '(message too long)';
+  
+  return metadata + (truncatedContent || '(empty)');
+}
+
 const badwordsJson = JSON.parse(
   fs.readFileSync(path.join(__dirname, "..", "utils", "badwords.json"), "utf8"),
 ).words;
@@ -397,11 +419,15 @@ module.exports = (client) => {
     );
 
     if (typeof sendToTelegram === 'function') {
-      const safeContent = content.length > 800 ? `${content.slice(0, 800)}…` : content;
-      sendToTelegram(
-        `?? Insult detected\n?? ${message.author.tag} (${message.author.id})\n#?? #${message.channel.name}\n?? Words: ${detectedWords.slice(0, 3).join(", ")}\n?? ${safeContent || "(empty)"}`,
-        { parse_mode: 'Markdown' }
-      );
+      const telegramMessage = buildTelegramMessage({
+        prefix: '🔴 Insult detected',
+        author: message.author.tag,
+        authorId: message.author.id,
+        channel: message.channel.name,
+        words: detectedWords.slice(0, 3).join(", "),
+        content: content
+      });
+      sendToTelegram(telegramMessage, { parse_mode: 'Markdown' });
     }
   });
 };

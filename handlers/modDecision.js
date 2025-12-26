@@ -11,6 +11,16 @@ const {
 } = require("discord.js");
 const { runJoinUsTicketDecision } = require("../utils/joinUsDecision");
 
+/**
+ * Validate that a string is a valid Discord snowflake ID (17-19 digits).
+ * Discord IDs are 64-bit integers represented as strings.
+ * @param {string} id - The ID to validate
+ * @returns {boolean} True if valid Discord snowflake format
+ */
+function isValidDiscordId(id) {
+  return typeof id === 'string' && /^\d{17,19}$/.test(id);
+}
+
 module.exports = (client) => {
   client.on(Events.InteractionCreate, async (interaction) => {
     // Handle ACCEPT/DECLINE buttons
@@ -23,14 +33,18 @@ module.exports = (client) => {
 
         if (!guild || !channel) {
           await interaction
-            .reply({ content: "? Ticket context missing.", flags: MessageFlags.Ephemeral })
+            .reply({ content: "❌ Ticket context missing.", flags: MessageFlags.Ephemeral })
             .catch(() => {});
           return;
         }
 
-        if (!userId) {
+        // Validate Discord snowflake format to prevent malformed IDs
+        if (!userId || !isValidDiscordId(userId)) {
           await interaction
-            .reply({ content: "? No user linked to this ticket.", flags: MessageFlags.Ephemeral })
+            .reply({ 
+              content: "❌ Invalid ticket: user ID missing or malformed. Please create a new ticket.", 
+              flags: MessageFlags.Ephemeral 
+            })
             .catch(() => {});
           return;
         }
@@ -127,9 +141,20 @@ module.exports = (client) => {
         const channel = interaction.channel;
         const userId = channel?.topic;
 
-        if (!guild || !channel || !userId || !selected) {
+        // Validate all required context including Discord ID format
+        if (!guild || !channel || !selected) {
           await interaction
-            .reply({ content: "? Missing context or reason.", ephemeral: true })
+            .reply({ content: "❌ Missing context or reason.", ephemeral: true })
+            .catch(() => {});
+          return;
+        }
+
+        if (!userId || !isValidDiscordId(userId)) {
+          await interaction
+            .reply({ 
+              content: "❌ Invalid ticket: user ID missing or malformed.", 
+              ephemeral: true 
+            })
             .catch(() => {});
           return;
         }
@@ -214,9 +239,20 @@ module.exports = (client) => {
         const channel = interaction.channel;
         const userId = channel?.topic;
 
-        if (!guild || !channel || !userId) {
+        if (!guild || !channel) {
           await interaction
-            .reply({ content: "? Missing ticket context.", flags: MessageFlags.Ephemeral })
+            .reply({ content: "❌ Missing ticket context.", flags: MessageFlags.Ephemeral })
+            .catch(() => {});
+          return;
+        }
+
+        // Validate Discord ID format
+        if (!userId || !isValidDiscordId(userId)) {
+          await interaction
+            .reply({ 
+              content: "❌ Invalid ticket: user ID missing or malformed.", 
+              flags: MessageFlags.Ephemeral 
+            })
             .catch(() => {});
           return;
         }

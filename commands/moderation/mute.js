@@ -71,9 +71,5 @@ module.exports = {
     }
 
     await interaction.reply(`**${target.tag}** has been muted for **${durationInput}**.\nReason: ${reason}`);
-
-    if (global.sendModLog) {
-      global.sendModLog(interaction, "Mute", target, reason);
-    }
   }
 };

@@ -1,4 +1,5 @@
 const fs = require("fs");
+const fsPromises = require("fs").promises;
 const path = require("path");
 const { EmbedBuilder } = require("discord.js");
 const { MODERATION_LOG_CHANNEL_ID, MOD_ROLE_NAME, FILTER_EXEMPT_CHANNEL_IDS } = require("../config/channels");
@@ -15,11 +16,15 @@ const FILTER_EXEMPT_SET = new Set(FILTER_EXEMPT_CHANNEL_IDS || []);
 // call to `updateScanState` is enqueued and executed sequentially.
 let scanStateQueue = Promise.resolve();
 
+// In-memory cache of the scan state to avoid stale reads from disk.
+// This is updated atomically within the queue to ensure consistency.
+let cachedScanState = null;
+
 /**
  * Update the saved scan state for a specific channel.  This helper
  * serializes updates to avoid race conditions where concurrent scans
- * overwrite each other's progress.  It reads the latest state from disk,
- * applies the update, and writes it back to disk in a queued manner.
+ * overwrite each other's progress.  It maintains an in-memory cache
+ * that is updated atomically and persisted to disk.
  *
  * @param {string} channelId The ID of the channel that was scanned.
  * @param {string} newestMessageId The ID of the newest message that was scanned.
@@ -27,13 +32,22 @@ let scanStateQueue = Promise.resolve();
  */
 function updateScanState(channelId, newestMessageId) {
   scanStateQueue = scanStateQueue
-    .then(() => {
-      const state = loadScanState();
-      state[channelId] = newestMessageId;
-      saveScanState(state);
+    .then(async () => {
+      // Load from cache or disk on first access
+      if (cachedScanState === null) {
+        cachedScanState = loadScanState();
+      }
+      
+      // Update the cached state atomically
+      cachedScanState[channelId] = newestMessageId;
+      
+      // Persist to disk asynchronously
+      await saveScanState(cachedScanState);
     })
     .catch((err) => {
       console.error("Failed to update scan state:", err.message);
+      // Invalidate cache on error to force reload on next update
+      cachedScanState = null;
     });
   return scanStateQueue;
 }
@@ -47,8 +61,17 @@ function loadScanState() {
   }
 }
 
-function saveScanState(state) {
-  fs.writeFileSync(scanStateFile, JSON.stringify(state, null, 2));
+/**
+ * Save scan state to disk asynchronously to prevent event loop blocking.
+ * This is called within the queue so it's already serialized.
+ */
+async function saveScanState(state) {
+  try {
+    await fsPromises.writeFile(scanStateFile, JSON.stringify(state, null, 2), "utf8");
+  } catch (err) {
+    console.error("Failed to write scan state:", err.message);
+    throw err; // Re-throw to trigger cache invalidation in updateScanState
+  }
 }
 
 function detectSpamPatterns(message) {
