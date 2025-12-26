@@ -33,4 +33,8 @@ module.exports = {
   PENDING_ROLE_ID: "1447512419705425952",
   VISITOR_ROLE_NAME: "Visitor", // Role for declined applicants with limited channel access
   ADMIN_USER_ID: "1349048881966747699",
+  
+  // Read-only role configuration
+  READ_ONLY_ROLE_NAME: process.env.READ_ONLY_ROLE_NAME || "LECTURE SEULE",
+  READ_ONLY_THRESHOLD: Number(process.env.READ_ONLY_THRESHOLD || 20),
 };

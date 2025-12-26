@@ -2,6 +2,9 @@ const { Events, EmbedBuilder } = require("discord.js");
 const { GENERAL_CHAT_ID, BUG_REPORTS_CHANNEL_ID } = require("../config/channels");
 const { hasBypassRole } = require("../utils/bypass");
 const { sendModerationLog } = require("./badwords");
+const { increment: incViolations, getCount: getViolationCount, hasReachedThreshold } = require("../utils/violationStore");
+const { assignReadOnlyRole } = require("../utils/readOnlyRole");
+const { READ_ONLY_THRESHOLD } = require("../config/channels");
 const { sendToTelegram } = require("../utils/telegram");
 
 // IDs allowed to use @everyone/@here without triggering spam
@@ -537,6 +540,8 @@ module.exports = (client) => {
     violationObjects.forEach(v => {
       recordMemberViolation(message.author.id, message.author, v);
     });
+    // Persist violation count
+    incViolations(message.author.id, violationObjects.length);
     
     // Build unified violation report for the moderation channel
     const memberData = memberViolationHistory.get(message.author.id);
@@ -561,6 +566,16 @@ module.exports = (client) => {
     await sendModerationLog(message.guild, logEmbed, message.author);
     
     console.log(`🚨 Spam: ${message.author.tag} - ${violations.join(", ")} - ${punishment}`);
+
+    // Check for read-only threshold and assign role if needed
+    try {
+      const total = getViolationCount(message.author.id);
+      if (hasReachedThreshold(message.author.id, READ_ONLY_THRESHOLD)) {
+        await assignReadOnlyRole(message.member, total);
+      }
+    } catch (err) {
+      console.warn("⚠️ Read-only assignment check failed:", err.message);
+    }
 
     if (typeof sendToTelegram === 'function') {
       const snippet = content.length > 800 ? `${content.slice(0, 800)}…` : content;

@@ -4,6 +4,9 @@ const { Events, EmbedBuilder } = require("discord.js");
 const { MODERATION_LOG_CHANNEL_ID, MOD_ROLE_NAME, GENERAL_CHAT_ID, BUG_REPORTS_CHANNEL_ID } = require("../config/channels");
 const { hasBypassRole } = require("../utils/bypass");
 const { sendToTelegram } = require("../utils/telegram");
+const { increment: incViolations, getCount: getViolationCount, hasReachedThreshold } = require("../utils/violationStore");
+const { assignReadOnlyRole } = require("../utils/readOnlyRole");
+const { READ_ONLY_THRESHOLD } = require("../config/channels");
 
 // Load base list (JSON) + optional extra list from badwords-list.txt
 const badwordsJson = JSON.parse(
@@ -371,6 +374,17 @@ module.exports = (client) => {
     // Send to moderation channel instead of DM
     if (reportEmbed) {
       await sendModerationLog(message.guild, reportEmbed, message.author);
+    }
+
+    // Persist violation count and check threshold
+    try {
+      incViolations(message.author.id, detectedWords.length);
+      const total = getViolationCount(message.author.id);
+      if (hasReachedThreshold(message.author.id, READ_ONLY_THRESHOLD)) {
+        await assignReadOnlyRole(message.member, total);
+      }
+    } catch (err) {
+      console.warn("⚠️ Read-only assignment after badword failed:", err.message);
     }
 
     console.log(
