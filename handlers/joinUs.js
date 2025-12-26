@@ -57,6 +57,11 @@ module.exports = (client) => {
           .catch(() => {});
       }
 
+      // Acquire lock BEFORE any async operations to prevent race conditions.
+      // This ensures that if multiple valid messages arrive in quick succession,
+      // only the first one proceeds with ticket creation.
+      creatingTickets.add(message.author.id);
+
       const botReply = await message.reply(
         "🙏 Thank you for your information!\n" +
           "**Our administrators are now reviewing your application.**",
@@ -84,11 +89,6 @@ module.exports = (client) => {
           .catch(() => {});
       }
 
-      // At this point we know we need to create a new ticket.  Add the
-      // applicant to the set to prevent concurrent creation.  Use a try/finally
-      // to ensure the lock is always released.
-      creatingTickets.add(message.author.id);
-
       const guild = message.guild;
       const member = message.member;
 
@@ -101,7 +101,7 @@ module.exports = (client) => {
       const staffRole = guild.roles.cache.get(STAFF_ROLE_ID);
       if (!leaderRole && !staffRole) {
         console.log("❌ ERROR: Neither Leader nor Staff role found");
-        creatingTickets.delete(message.author.id);
+        // Lock will be released by finally block
         return;
       }
 
