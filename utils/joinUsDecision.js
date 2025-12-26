@@ -29,52 +29,104 @@ async function cleanupJoinUsMessages(guild, ticketChannel) {
 }
 
 async function applyAcceptRoles(guild, member) {
+  const result = {
+    addedGuest: false,
+    addedMember: false,
+    removedApplicant: false,
+    removedUnverified: false,
+  };
+
   // Add Guest role
-  if (GUEST_ROLE_ID) {
-    const guestRole = guild.roles.cache.get(GUEST_ROLE_ID);
-    if (guestRole && !member.roles.cache.has(guestRole.id)) {
-      await member.roles.add(guestRole).catch(() => {});
+  try {
+    if (GUEST_ROLE_ID) {
+      const guestRole = guild.roles.cache.get(GUEST_ROLE_ID);
+      if (guestRole && !member.roles.cache.has(guestRole.id)) {
+        await member.roles.add(guestRole);
+        result.addedGuest = true;
+      }
     }
+  } catch (err) {
+    console.warn(`⚠️ Failed to add Guest role to ${member.user?.tag}: ${err.message}`);
   }
 
   // Add Member role
-  const memberRole = MEMBER_ROLE_ID
-    ? guild.roles.cache.get(MEMBER_ROLE_ID)
-    : guild.roles.cache.find((r) => r.name === MEMBER_ROLE_NAME);
-  if (memberRole && !member.roles.cache.has(memberRole.id)) {
-    await member.roles.add(memberRole).catch(() => {});
+  try {
+    const memberRole = MEMBER_ROLE_ID
+      ? guild.roles.cache.get(MEMBER_ROLE_ID)
+      : guild.roles.cache.find((r) => r.name === MEMBER_ROLE_NAME);
+    if (memberRole && !member.roles.cache.has(memberRole.id)) {
+      await member.roles.add(memberRole);
+      result.addedMember = true;
+    }
+  } catch (err) {
+    console.warn(`⚠️ Failed to add Member role to ${member.user?.tag}: ${err.message}`);
   }
 
   // Remove Applicant role
-  const applicantRole = guild.roles.cache.find((r) => r.name === APPLICANT_ROLE_NAME);
-  if (applicantRole && member.roles.cache.has(applicantRole.id)) {
-    await member.roles.remove(applicantRole).catch(() => {});
+  try {
+    const applicantRole = guild.roles.cache.find((r) => r.name === APPLICANT_ROLE_NAME);
+    if (applicantRole && member.roles.cache.has(applicantRole.id)) {
+      await member.roles.remove(applicantRole);
+      result.removedApplicant = true;
+    }
+  } catch (err) {
+    console.warn(`⚠️ Failed to remove Applicant role from ${member.user?.tag}: ${err.message}`);
   }
 
   // Remove Unverified role
-  const unverifiedRole = guild.roles.cache.find((r) => r.name === UNVERIFIED_ROLE_NAME);
-  if (unverifiedRole && member.roles.cache.has(unverifiedRole.id)) {
-    await member.roles.remove(unverifiedRole).catch(() => {});
+  try {
+    const unverifiedRole = guild.roles.cache.find((r) => r.name === UNVERIFIED_ROLE_NAME);
+    if (unverifiedRole && member.roles.cache.has(unverifiedRole.id)) {
+      await member.roles.remove(unverifiedRole);
+      result.removedUnverified = true;
+    }
+  } catch (err) {
+    console.warn(`⚠️ Failed to remove Unverified role from ${member.user?.tag}: ${err.message}`);
   }
+
+  return result;
 }
 
 async function applyDeclineRoles(guild, member) {
-  const applicantRole = guild.roles.cache.find((r) => r.name === APPLICANT_ROLE_NAME);
-  if (applicantRole && member.roles.cache.has(applicantRole.id)) {
-    await member.roles.remove(applicantRole).catch(() => {});
+  const result = {
+    removedApplicant: false,
+    removedUnverified: false,
+    addedVisitor: false,
+  };
+
+  try {
+    const applicantRole = guild.roles.cache.find((r) => r.name === APPLICANT_ROLE_NAME);
+    if (applicantRole && member.roles.cache.has(applicantRole.id)) {
+      await member.roles.remove(applicantRole);
+      result.removedApplicant = true;
+    }
+  } catch (err) {
+    console.warn(`⚠️ Failed to remove Applicant role from ${member.user?.tag}: ${err.message}`);
   }
 
-  // Remove Unverified role so declined users can explore limited channels
-  const unverifiedRole = guild.roles.cache.find((r) => r.name === UNVERIFIED_ROLE_NAME);
-  if (unverifiedRole && member.roles.cache.has(unverifiedRole.id)) {
-    await member.roles.remove(unverifiedRole).catch(() => {});
+  try {
+    // Remove Unverified role so declined users can explore limited channels
+    const unverifiedRole = guild.roles.cache.find((r) => r.name === UNVERIFIED_ROLE_NAME);
+    if (unverifiedRole && member.roles.cache.has(unverifiedRole.id)) {
+      await member.roles.remove(unverifiedRole);
+      result.removedUnverified = true;
+    }
+  } catch (err) {
+    console.warn(`⚠️ Failed to remove Unverified role from ${member.user?.tag}: ${err.message}`);
   }
 
-  // Add Visitor role to give access only to specific channels (team-search, clips, screenshots, etc.)
-  const visitorRole = guild.roles.cache.find((r) => r.name === VISITOR_ROLE_NAME);
-  if (visitorRole && !member.roles.cache.has(visitorRole.id)) {
-    await member.roles.add(visitorRole).catch(() => {});
+  try {
+    // Add Visitor role to give access only to specific channels (team-search, clips, screenshots, etc.)
+    const visitorRole = guild.roles.cache.find((r) => r.name === VISITOR_ROLE_NAME);
+    if (visitorRole && !member.roles.cache.has(visitorRole.id)) {
+      await member.roles.add(visitorRole);
+      result.addedVisitor = true;
+    }
+  } catch (err) {
+    console.warn(`⚠️ Failed to add Visitor role to ${member.user?.tag}: ${err.message}`);
   }
+
+  return result;
 }
 
 async function closeTicketSoon(ticketChannel) {
@@ -105,11 +157,14 @@ async function runJoinUsTicketDecision({
   await cleanupJoinUsMessages(guild, ticketChannel);
 
   if (decision === "accept") {
-    await applyAcceptRoles(guild, member);
+    const applyResult = await applyAcceptRoles(guild, member);
+    const roleChangeOk = applyResult.addedGuest || applyResult.addedMember;
 
     await ticketChannel
       .send(
-        `?? Application **ACCEPTED** by ${moderatorLabel}${reason ? `\nReason: ${reason}` : ""}.`,
+        roleChangeOk
+          ? `?? Application **ACCEPTED** by ${moderatorLabel}${reason ? `\nReason: ${reason}` : ""}.`
+          : `?? Application **ACCEPTED** by ${moderatorLabel}, but I couldn't change roles.\nPlease ensure the bot's role is above Guest/Member and has 'Manage Roles' permission.`,
       )
       .catch(() => {});
 
@@ -121,7 +176,7 @@ async function runJoinUsTicketDecision({
       .catch(() => {});
 
     await closeTicketSoon(ticketChannel);
-    return { ok: true };
+    return roleChangeOk ? { ok: true } : { ok: false, error: "Insufficient permissions to change roles on acceptance." };
   }
 
   if (decision === "deny") {
