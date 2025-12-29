@@ -1,0 +1,26 @@
+[dotenv@17.2.3] injecting env (4) from .env -- tip: ­ƒæÑ sync secrets across teammates & machines: https://dotenvx.com/ops
+­ƒôª Command loaded: ban
+­ƒôª Command loaded: clear
+­ƒôª Command loaded: kick
+­ƒôª Command loaded: mute
+­ƒôª Command loaded: scan
+­ƒôª Command loaded: svs
+­ƒôª Command loaded: unmute
+­ƒöì Initializing Telegram notifier with token: 8369209745... and chat ID: 6503422166
+Ô£à Telegram File Notifier initialized successfully
+­ƒæü´©Å Watching directory: C:\Users\tetau\Downloads\Compressed\xprobot\xprobot
+­ƒÜÇ Telegram File Notifier started
+­ƒîÉ HTTP server running on port 3000
+Ô£à Custom message sent to Telegram
+ÔÅ░ SVS scheduler started - Times: 4:00, 7:30, 11:30, 16:00, 19:30, 23:30
+Ô£à ­ØöÁ­Øö×­Øö│­Øöª­Øöó­Øö» ­ØæØ­Øæƒ­Øæ£#5439 is now online!
+Ô£à Hero-Tips: no changes, keeping existing messages.
+Ô£à rules: no changes, keeping existing message.
+Ô£à joinUs: no changes, keeping existing message.
+Ô£à divineTips: no changes, keeping existing message.
+Ô£à Message sent to Telegram for: .env.example
+(node:13280) [node-telegram-bot-api] DeprecationWarning: In the future, content-type of files you send will default to "application/octet-stream". See https://github.com/yagop/node-telegram-bot-api/blob/master/doc/usage.md#sending-files for more information on how sending files has been improved and on how to disable this deprecation message altogether.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Ô£à File sent to Telegram: .env.example
+Ô£à Message sent to Telegram for: .env.example
+Ô£à File sent to Telegram: .env.example
