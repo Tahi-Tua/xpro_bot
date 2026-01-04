@@ -170,8 +170,8 @@ async function runJoinUsTicketDecision({
 
     await member
       .send(
-        "?? Your application has been **accepted**! Welcome to Xavier Pro!\n" +
-          "You now have full access to all channels.",
+        "?? Your application has been **accepted**!\n" +
+          "An XPro staff member will reach out to you **in-game later today** to get you set up.",
       )
       .catch(() => {});
 
