@@ -163,14 +163,14 @@ async function runJoinUsTicketDecision({
     await ticketChannel
       .send(
         roleChangeOk
-          ? `?? Application **ACCEPTED** by ${moderatorLabel}${reason ? `\nReason: ${reason}` : ""}.`
-          : `?? Application **ACCEPTED** by ${moderatorLabel}, but I couldn't change roles.\nPlease ensure the bot's role is above Guest/Member and has 'Manage Roles' permission.`,
+          ? `✅ Application **ACCEPTED** by ${moderatorLabel}${reason ? `\nReason: ${reason}` : ""}.`
+          : `✅ Application **ACCEPTED** by ${moderatorLabel}, but I couldn't change roles.\n⚠️ Please ensure the bot's role is above Guest/Member and has 'Manage Roles' permission.`,
       )
       .catch(() => {});
 
     await member
       .send(
-        "?? Your application has been **accepted**!\n" +
+        "✅ Your application has been **accepted**!\n" +
           "An XPro staff member will reach out to you **in-game later today** to get you set up.",
       )
       .catch(() => {});
@@ -184,7 +184,7 @@ async function runJoinUsTicketDecision({
 
     await ticketChannel
       .send(
-        `?? Application **DECLINED** by ${moderatorLabel}${reason ? `\nReason: ${reason}` : ""}.`,
+        `❌ Application **DECLINED** by ${moderatorLabel}${reason ? `\nReason: ${reason}` : ""}.`,
       )
       .catch(() => {});
 
