@@ -62,10 +62,12 @@ module.exports = (client) => {
       // only the first one proceeds with ticket creation.
       creatingTickets.add(message.author.id);
 
-      const botReply = await message.reply(
-        "🙏 Thank you for your information!\n" +
+      const botReply = await message.channel.send({
+        content:
+          "🙏 Thank you for your information!\n" +
           "**Our administrators are now reviewing your application.**",
-      );
+        allowedMentions: { users: [message.author.id] },
+      });
 
       const admin = await client.users.fetch(ADMIN_USER_ID).catch(() => null);
       if (admin) {
