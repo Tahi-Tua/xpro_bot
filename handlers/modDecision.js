@@ -62,6 +62,7 @@ module.exports = (client) => {
               { label: "Invalid/No stats link", value: "Invalid or missing stats link" },
               { label: "Not meeting requirements", value: "Not meeting requirements" },
               { label: "Behavior concerns", value: "Behavior concerns" },
+              { label: "Syndicate is full", value: "Syndicate is currently full" },
               { label: "Wrong server/region", value: "Wrong server or region" },
             ]);
 
