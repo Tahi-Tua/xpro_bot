@@ -54,6 +54,20 @@ client.once("ready", async () => {
       console.warn("⚠️ No roles found to restrict in general chat.");
     }
 
+    // First, allow @everyone to access the channel
+    try {
+      await channel.permissionOverwrites.edit(guild.id, {
+        [PermissionFlagsBits.ViewChannel]: true,
+        [PermissionFlagsBits.SendMessages]: true,
+        [PermissionFlagsBits.ReadMessageHistory]: true,
+        [PermissionFlagsBits.AddReactions]: true,
+      });
+      console.log(`✅ Applied access to @everyone`);
+    } catch (err) {
+      console.log(`⚠️ Could not update permissions for @everyone: ${err.message}`);
+    }
+
+    // Then apply restrictions to specific roles (no attachments/embeds)
     let updated = 0;
     for (const role of rolesToRestrict) {
       try {
