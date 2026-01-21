@@ -1,7 +1,8 @@
 module.exports = {
   id: "heroBlot",
   name: "🔴・Blot・水滴",
-  image: "https://i.pinimg.com/474x/5f/7a/9e/5f7a9e8c3d9c1b5f7a9e8c3d9c1b5f7a.jpg",
+  image:
+    "https://tse1.mm.bing.net/th/id/OIP.sf3Hga4SQmlVXdYj5cIb2gHaLQ?cb=defcache2defcache=1&rs=1&pid=ImgDetMain&o=7&rm=3",
   tips: `Tips to Master Blot
 
 1. Movement and Stealth

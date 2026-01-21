@@ -1,7 +1,7 @@
 module.exports = {
   id: "heroMirage",
   name: "💜・Mirage・幻影",
-  image: "https://i.pinimg.com/474x/8f/7a/3e/8f7a3e4c8d9b1a5f7c3e4d9b1a5f7c3e.jpg",
+  image: "https://tse4.mm.bing.net/th/id/OIP.TVVk0VbPVPTI8xD3NjxORwHaLQ?cb=defcache2defcache=1&rs=1&pid=ImgDetMain&o=7&rm=3",
   tips: `Tips to Master Mirage
 
 1. Healing Between Shots

@@ -1,7 +1,7 @@
 module.exports = {
   id: "heroGhost",
   name: "👻・Ghost・幽灵",
-  image: "https://i.pinimg.com/474x/e8/8e/5b/e88e5bfb4f5c0c8c5e5b5c5d5e5f5b5a.jpg",
+  image: "https://tse3.mm.bing.net/th/id/OIP.rz6_ptV5h6IQQqVDGEI-qQHaLQ?cb=defcache2defcache=1&rs=1&pid=ImgDetMain&o=7&rm=3",
   tips: `Tips to Master Ghost
 
 1. Invisibility Positioning
