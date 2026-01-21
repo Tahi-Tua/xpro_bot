@@ -1,0 +1,933 @@
+require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+
+const {
+  Client,
+  Collection,
+  GatewayIntentBits,
+  EmbedBuilder,
+  Partials,
+  Events,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} = require("discord.js");
+
+const {
+  RULES_CHANNEL_ID,
+  JOIN_US_CHANNEL_ID,
+  DIVINE_TIPS_CHANNEL_ID,
+} = require("./config/channels");
+
+const stateFile = path.join(__dirname, "data/channelState.json");
+
+function loadChannelState() {
+  try {
+    const data = fs.readFileSync(stateFile, "utf8");
+    return JSON.parse(data);
+  } catch {
+    return {};
+  }
+}
+
+function saveChannelState(state) {
+  fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+}
+
+function contentHash(content) {
+  return crypto.createHash("md5").update(JSON.stringify(content)).digest("hex");
+}
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildPresences,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
+  partials: [Partials.Channel, Partials.Message],
+});
+
+client.commands = new Collection();
+
+const commandsPath = path.join(__dirname, "commands");
+if (fs.existsSync(commandsPath)) {
+  const commandFolders = fs.readdirSync(commandsPath);
+  for (const folder of commandFolders) {
+    const folderPath = path.join(commandsPath, folder);
+    const stat = fs.statSync(folderPath);
+    if (stat.isDirectory()) {
+      const commandFiles = fs.readdirSync(folderPath).filter(file => file.endsWith(".js"));
+      for (const file of commandFiles) {
+        const filePath = path.join(folderPath, file);
+        const command = require(filePath);
+        if ("data" in command && "execute" in command) {
+          client.commands.set(command.data.name, command);
+          console.log(`📦 Command loaded: ${command.data.name}`);
+        }
+      }
+    }
+  }
+}
+
+require("./handlers/rules")(client);
+require("./handlers/joinUs")(client);
+require("./handlers/modDecision")(client);
+require("./handlers/generalChat")(client);
+require("./handlers/screenshots")(client);
+require("./handlers/badwords")(client);
+require("./handlers/spam")(client);
+require("./handlers/heroTips")(client);
+require("./handlers/svsReminder")(client);
+require("./handlers/onlineMembers")(client);
+
+require("./events/memberJoin")(client);
+require("./events/memberLeave")(client);
+
+const RULES_CONTENT = {
+  "1380197851371409479": { emoji: "📰", name: "BE-News" },
+  "1380197851371409482": { emoji: "🛡️", name: "member-spam" },
+  "1448081738101424194": { emoji: "🟢", name: "online-members" },
+  "1446779130145144892": { emoji: "🌍", name: "introduction" },
+  "1381588732418981918": { emoji: "📢", name: "announcements" },
+  "1381589122455703644": { emoji: "👋", name: "welcome" },
+  "1381588865235812373": { emoji: "🎯", name: "rules" },
+  "1381590371758374922": { emoji: "💌", name: "join-us" },
+  "1392950551502786660": { emoji: "🗣️", name: "general-chat" },
+  "1381575518532534402": { emoji: "🖼️", name: "screenshots" },
+  "1381575870468198460": { emoji: "🔍", name: "team-search" },
+  "1381583643834581013": { emoji: "🥂", name: "suggestion" },
+  "1381574506165960795": { emoji: "🦾", name: "bot-commands" },
+  "1381585277394620438": { emoji: "🤝", name: "partnership" },
+  "1381586337408225322": { emoji: "✊", name: "divine-tips" },
+  "1381586653033922620": { emoji: "🥋", name: "pro-tips" },
+  "1381596170748690452": { emoji: "🔔", name: "svs-reminder" },
+};
+
+const TELEGRAM_MENU = {
+  inline_keyboard: [
+    [
+      { text: "📊 Stats", callback_data: "menu_stats" },
+      { text: "👥 Membres", callback_data: "menu_members" },
+      { text: "🏰 Serveur", callback_data: "menu_server" },
+    ],
+    [
+      { text: "📋 Salons", callback_data: "menu_channels" },
+      { text: "🎭 Rôles", callback_data: "menu_roles" },
+    ],
+    [
+      { text: "🔔 Filtrer salons", callback_data: "filter_channels" },
+    ],
+  ],
+};
+
+function getChannelFilterMenu(chatId = null) {
+  const keyboard = [];
+  const channels = Object.entries(CHANNEL_INFO);
+  const activeFilters = chatId && userChannelFilters.has(chatId) 
+    ? userChannelFilters.get(chatId) 
+    : new Set();
+  
+  // Group channels in rows of 2
+  for (let i = 0; i < channels.length; i += 2) {
+    const row = [];
+    const isActive1 = activeFilters.size === 0 || activeFilters.has(channels[i][0]);
+    const checkmark1 = isActive1 ? "✅ " : "";
+    row.push({
+      text: `${checkmark1}${channels[i][1].emoji} ${channels[i][1].name}`,
+      callback_data: `view_ch_${channels[i][0]}`,
+    });
+    if (i + 1 < channels.length) {
+      const isActive2 = activeFilters.size === 0 || activeFilters.has(channels[i + 1][0]);
+      const checkmark2 = isActive2 ? "✅ " : "";
+      row.push({
+        text: `${checkmark2}${channels[i + 1][1].emoji} ${channels[i + 1][1].name}`,
+        callback_data: `view_ch_${channels[i + 1][0]}`,
+      });
+    }
+    keyboard.push(row);
+  }
+  
+  // Add "Tous" and "Aucun" buttons
+  keyboard.push([
+    { text: "✅ Tous", callback_data: "filter_all" },
+    { text: "❌ Aucun", callback_data: "filter_none" },
+  ]);
+  
+  keyboard.push([
+    { text: "⬅️ Retour", callback_data: "menu_back" },
+  ]);
+  
+  return { inline_keyboard: keyboard };
+}
+
+function sendWelcome(chatId) {
+  const text =
+    `🤖 *Xavier Pro Bot - Bridge Discord → Telegram*\n\n` +
+    `Votre Chat ID: \`${chatId}\`\n` +
+    `Ce pont relaie les nouveaux messages Discord et les alertes modération (spam/insultes).\n\n` +
+    `*Navigation rapide :* utilisez les boutons ci-dessous.`;
+
+  telegramBot.sendMessage(chatId, text, {
+    parse_mode: "Markdown",
+    reply_markup: TELEGRAM_MENU,
+  });
+}
+
+// Telegram command: /start
+telegramBot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+  authorizedTelegramChats.add(chatId);
+  sendWelcome(chatId);
+});
+
+async function tgSendServer(chatId) {
+  try {
+    const guild = getPrimaryGuild();
+    if (!guild) {
+      return telegramBot.sendMessage(chatId, "❌ Serveur Discord non disponible.");
+    }
+
+    const snapshot = await getMemberSnapshot(guild);
+    const totalMembers = snapshot.counts.total;
+    const onlineMembers = snapshot.counts.online + snapshot.counts.idle + snapshot.counts.dnd;
+    const textChannels = guild.channels.cache.filter(c => c.type === 0).size;
+    const voiceChannels = guild.channels.cache.filter(c => c.type === 2).size;
+    const roles = guild.roles.cache.size;
+    const boostLevel = guild.premiumTier;
+    const boostCount = guild.premiumSubscriptionCount;
+
+    const safeName = escapeMarkdown(guild.name || "Serveur");
+    const message = 
+      `🏰 *${safeName}*\n\n` +
+      `👥 *Membres:* ${totalMembers}\n` +
+      `🟢 *En ligne:* ${onlineMembers}\n` +
+      `💬 *Salons texte:* ${textChannels}\n` +
+      `🔊 *Salons vocaux:* ${voiceChannels}\n` +
+      `🎭 *Rôles:* ${roles}\n` +
+      `💎 *Niveau Boost:* ${boostLevel} (${boostCount} boosts)\n` +
+      `📅 *Créé le:* ${guild.createdAt.toLocaleDateString('fr-FR')}\n` +
+      `🆔 *ID:* \`${DISCORD_SERVER_ID}\`` +
+      (snapshot.stale ? "\n\n⚠️ Donnees de presence en cours de chargement..." : "");
+
+    telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown', reply_markup: TELEGRAM_MENU });
+  } catch (error) {
+    console.error('Telegram /server error:', error);
+    telegramBot.sendMessage(chatId, "❌ Erreur lors de la récupération des infos.");
+  }
+}
+
+// Telegram command: /server - Server info
+telegramBot.onText(/\/server/, (msg) => tgSendServer(msg.chat.id));
+
+// Simple in-memory cache to avoid hitting Discord rate limits when listing members
+const memberSnapshotCache = { lastBuild: 0, snapshot: null };
+
+async function getMemberSnapshot(guild) {
+  const now = Date.now();
+  // Reuse snapshot for 30s to reduce repeated presence lookups
+  if (memberSnapshotCache.snapshot && now - memberSnapshotCache.lastBuild < 30_000) {
+    return memberSnapshotCache.snapshot;
+  }
+
+  const members = guild.members.cache;
+
+  // If cache is empty (bot just started), return minimal data without forcing a full fetch
+  if (members.size === 0) {
+    const fallback = {
+      onlineList: [],
+      counts: {
+        total: guild.memberCount,
+        humans: 0,
+        bots: 0,
+        online: 0,
+        idle: 0,
+        dnd: 0,
+        offline: guild.memberCount,
+      },
+      stale: true,
+    };
+    memberSnapshotCache.snapshot = fallback;
+    memberSnapshotCache.lastBuild = now;
+    return fallback;
+  }
+
+  const humans = members.filter(m => !m.user.bot).size;
+  const bots = members.filter(m => m.user.bot).size;
+  const online = members.filter(m => m.presence?.status === 'online').size;
+  const idle = members.filter(m => m.presence?.status === 'idle').size;
+  const dnd = members.filter(m => m.presence?.status === 'dnd').size;
+  const offline = members.filter(m => !m.presence || m.presence?.status === 'offline').size;
+
+  const onlineList = members
+    .filter(m => !m.user.bot && (
+      m.presence?.status === 'online' ||
+      m.presence?.status === 'idle' ||
+      m.presence?.status === 'dnd'
+    ))
+    .map(m => {
+      const status = m.presence?.status === 'online' ? '🟢' :
+                     m.presence?.status === 'idle' ? '🟡' : '🔴';
+      return `${status} ${escapeMarkdown(m.user.username)}`;
+    })
+    .slice(0, 30);
+
+  const snapshot = {
+    onlineList,
+    counts: {
+      total: guild.memberCount,
+      humans,
+      bots,
+      online,
+      idle,
+      dnd,
+      offline,
+    },
+    stale: false,
+  };
+
+  memberSnapshotCache.snapshot = snapshot;
+  memberSnapshotCache.lastBuild = now;
+  return snapshot;
+}
+
+async function tgSendMembers(chatId) {
+  try {
+    const guild = getPrimaryGuild();
+    if (!guild) {
+      return telegramBot.sendMessage(chatId, "❌ Serveur Discord non disponible.");
+    }
+
+    const snapshot = await getMemberSnapshot(guild);
+    const onlineMembers = snapshot.onlineList;
+
+    if (onlineMembers.length === 0) {
+      return telegramBot.sendMessage(chatId, snapshot.stale
+        ? "⏳ Données de présence non encore disponibles. Réessayez dans quelques secondes."
+        : "😴 Aucun membre en ligne.");
+    }
+
+    const message =
+      `👥 *Membres en ligne (${onlineMembers.length}):*\n\n` +
+      onlineMembers.join('\n');
+
+    telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown', reply_markup: TELEGRAM_MENU });
+  } catch (error) {
+    console.error('Telegram /members error:', error);
+    telegramBot.sendMessage(chatId, "❌ Erreur lors de la récupération des membres.");
+  }
+}
+
+// Telegram command: /members - Online members
+telegramBot.onText(/\/members/, (msg) => tgSendMembers(msg.chat.id));
+
+async function tgSendStats(chatId) {
+  try {
+    const guild = getPrimaryGuild();
+    if (!guild) {
+      return telegramBot.sendMessage(chatId, "❌ Serveur Discord non disponible.");
+    }
+
+    const snapshot = await getMemberSnapshot(guild);
+    const { total, humans, bots, online, idle, dnd, offline } = snapshot.counts;
+
+    const message =
+      `📊 *Statistiques - ${escapeMarkdown(guild.name)}*\n\n` +
+      `*Membres:*\n` +
+      `├ 👤 Humains: ${humans}\n` +
+      `├ 🤖 Bots: ${bots}\n` +
+      `└ 📈 Total: ${total}\n\n` +
+      `*Status:*\n` +
+      `├ 🟢 En ligne: ${online}\n` +
+      `├ 🟡 Inactif: ${idle}\n` +
+      `├ 🔴 Ne pas déranger: ${dnd}\n` +
+      `└ ⚫ Hors ligne: ${offline}`;
+
+    telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown', reply_markup: TELEGRAM_MENU });
+  } catch (error) {
+    console.error('Telegram /stats error:', error);
+    telegramBot.sendMessage(chatId, "❌ Erreur lors de la récupération des stats.");
+  }
+}
+
+// Telegram command: /stats - Server statistics
+telegramBot.onText(/\/stats/, (msg) => tgSendStats(msg.chat.id));
+
+async function tgSendChannels(chatId) {
+  try {
+    const guild = getPrimaryGuild();
+    if (!guild) {
+      return telegramBot.sendMessage(chatId, "❌ Serveur Discord non disponible.");
+    }
+
+    const textChannels = guild.channels.cache
+      .filter(c => c.type === 0)
+      .map(c => `💬 #${escapeMarkdown(c.name)}`)
+      .slice(0, 20);
+    
+    const voiceChannels = guild.channels.cache
+      .filter(c => c.type === 2)
+      .map(c => `🔊 ${escapeMarkdown(c.name)}`)
+      .slice(0, 10);
+
+    const message = 
+      `📋 *Salons - ${escapeMarkdown(guild.name)}*\n\n` +
+      `*Salons texte:*\n${textChannels.join('\n')}\n\n` +
+      `*Salons vocaux:*\n${voiceChannels.join('\n')}`;
+
+    telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown', reply_markup: TELEGRAM_MENU });
+  } catch (error) {
+    console.error('Telegram /channels error:', error);
+    telegramBot.sendMessage(chatId, "❌ Erreur lors de la récupération des salons.");
+  }
+}
+
+// Telegram command: /channels - List channels
+telegramBot.onText(/\/channels/, (msg) => tgSendChannels(msg.chat.id));
+
+async function tgSendRoles(chatId) {
+  try {
+    const guild = getPrimaryGuild();
+    if (!guild) {
+      return telegramBot.sendMessage(chatId, "❌ Serveur Discord non disponible.");
+    }
+
+    const roles = guild.roles.cache
+      .filter(r => r.name !== '@everyone')
+      .sort((a, b) => b.position - a.position)
+      .map(r => `🎭 ${escapeMarkdown(r.name)} (${r.members.size} membres)`)
+      .slice(0, 20);
+
+    const message = 
+      `🎭 *Rôles - ${escapeMarkdown(guild.name)}*\n\n` +
+      roles.join('\n');
+
+    telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown', reply_markup: TELEGRAM_MENU });
+  } catch (error) {
+    console.error('Telegram /roles error:', error);
+    telegramBot.sendMessage(chatId, "❌ Erreur lors de la récupération des rôles.");
+  }
+}
+
+// Telegram command: /roles - List roles
+telegramBot.onText(/\/roles/, (msg) => tgSendRoles(msg.chat.id));
+
+// Function to fetch and display channel history
+async function viewChannelHistory(chatId, channelId) {
+  try {
+    const guild = getPrimaryGuild();
+    if (!guild) {
+      return telegramBot.sendMessage(chatId, "❌ Serveur Discord non disponible.");
+    }
+
+    const channel = guild.channels.cache.get(channelId);
+    if (!channel || !channel.isTextBased()) {
+      return telegramBot.sendMessage(chatId, "❌ Salon introuvable ou non accessible.");
+    }
+
+    const channelInfo = CHANNEL_INFO[channelId] || { emoji: "💬", name: channel.name };
+    
+    // Enable this channel in filters
+    if (!userChannelFilters.has(chatId)) {
+      userChannelFilters.set(chatId, new Set());
+    }
+    const filters = userChannelFilters.get(chatId);
+    if (filters.has("__NONE__")) {
+      filters.clear();
+    }
+    filters.add(channelId);
+    
+    telegramBot.sendMessage(chatId, 
+      `📜 Chargement de l'historique de ${channelInfo.emoji} *#${escapeMarkdown(channel.name)}*...`,
+      { parse_mode: "Markdown" }
+    );
+
+    // Fetch last 20 messages
+    const messages = await channel.messages.fetch({ limit: 20 });
+    const sortedMessages = Array.from(messages.values()).reverse(); // oldest first
+
+    if (sortedMessages.length === 0) {
+      return telegramBot.sendMessage(chatId, "📭 Aucun message dans ce salon.");
+    }
+
+    for (const msg of sortedMessages) {
+      if (msg.author.bot) continue;
+
+      const author = escapeMarkdown(msg.author.tag);
+      const content = (msg.content || "").trim();
+      const trimmedContent = content.length > TELEGRAM_MAX_LEN 
+        ? `${content.slice(0, TELEGRAM_MAX_LEN)}…` 
+        : content;
+
+      const timestamp = msg.createdAt.toLocaleString('fr-FR', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+
+      let text = 
+        `${channelInfo.emoji} *#${escapeMarkdown(channel.name)}*\n` +
+        `👤 ${author} • 🕐 ${timestamp}\n` +
+        (trimmedContent ? `📝 ${escapeMarkdown(trimmedContent)}\n` : "📝 (vide)\n");
+
+      if (msg.attachments.size > 0) {
+        const links = Array.from(msg.attachments.values())
+          .map((att) => att.url)
+          .slice(0, 3);
+        const extra = msg.attachments.size > links.length 
+          ? ` (+${msg.attachments.size - links.length} fichiers)` 
+          : "";
+        text += `📎 Fichiers${extra}:\n${escapeMarkdown(links.join("\n"))}\n`;
+      }
+
+      await telegramBot.sendMessage(chatId, text.trim(), { parse_mode: "Markdown" })
+        .catch(err => console.error(`Error sending history message:`, err.message));
+      
+      // Small delay to avoid rate limits
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    telegramBot.sendMessage(chatId, 
+      `✅ *Historique chargé !*\n\n` +
+      `Les nouveaux messages de ${channelInfo.emoji} *#${escapeMarkdown(channel.name)}* seront relayés automatiquement.`,
+      { parse_mode: "Markdown" }
+    );
+
+  } catch (error) {
+    console.error('Error fetching channel history:', error);
+    telegramBot.sendMessage(chatId, "❌ Erreur lors du chargement de l'historique.");
+  }
+}
+
+// Inline menu callbacks
+telegramBot.on("callback_query", async (query) => {
+  const chatId = query.message?.chat?.id;
+  if (!chatId) return;
+
+  // Channel view handlers - shows history + enables forwarding
+  if (query.data.startsWith("view_ch_")) {
+    const channelId = query.data.replace("view_ch_", "");
+    telegramBot.answerCallbackQuery(query.id, {
+      text: "📜 Chargement de l'historique...",
+      show_alert: false,
+    }).catch(() => {});
+    
+    await viewChannelHistory(chatId, channelId);
+    return;
+  }
+
+  // Channel toggle handlers (legacy)
+  if (query.data.startsWith("toggle_ch_")) {
+    const channelId = query.data.replace("toggle_ch_", "");
+    if (!userChannelFilters.has(chatId)) {
+      userChannelFilters.set(chatId, new Set());
+    }
+    
+    const filters = userChannelFilters.get(chatId);
+    
+    // If filters is empty, it means "all enabled". First click should disable all except this one
+    if (filters.size === 0) {
+      // Enable only this channel
+      filters.add(channelId);
+      telegramBot.answerCallbackQuery(query.id, {
+        text: `✅ Seul ${CHANNEL_INFO[channelId]?.name || "ce salon"} est activé`,
+        show_alert: false,
+      }).catch(() => {});
+    } else if (filters.has(channelId)) {
+      // Remove from filters
+      filters.delete(channelId);
+      telegramBot.answerCallbackQuery(query.id, {
+        text: "❌ Retiré",
+        show_alert: false,
+      }).catch(() => {});
+    } else {
+      // Add to filters
+      filters.add(channelId);
+      telegramBot.answerCallbackQuery(query.id, {
+        text: "✅ Ajouté",
+        show_alert: false,
+      }).catch(() => {});
+    }
+    
+    console.log(`[Telegram Filter] Chat ${chatId} filters:`, Array.from(filters));
+    
+    // Refresh the filter menu with active state
+    const menu = getChannelFilterMenu(chatId);
+    telegramBot.editMessageReplyMarkup(menu, {
+      chat_id: chatId,
+      message_id: query.message.message_id,
+    }).catch(() => {});
+    return;
+  }
+
+  // Filter all
+  if (query.data === "filter_all") {
+    // Empty Set means "all channels"
+    userChannelFilters.set(chatId, new Set());
+    console.log(`[Telegram Filter] Chat ${chatId} enabled ALL channels`);
+    telegramBot.answerCallbackQuery(query.id, {
+      text: "✅ Tous les salons activés",
+      show_alert: false,
+    }).catch(() => {});
+    const menu = getChannelFilterMenu(chatId);
+    telegramBot.editMessageReplyMarkup(menu, {
+      chat_id: chatId,
+      message_id: query.message.message_id,
+    }).catch(() => {});
+    return;
+  }
+
+  // Filter none
+  if (query.data === "filter_none") {
+    // Special marker to block all
+    userChannelFilters.set(chatId, new Set(["__NONE__"]));
+    console.log(`[Telegram Filter] Chat ${chatId} disabled ALL channels`);
+    telegramBot.answerCallbackQuery(query.id, {
+      text: "❌ Aucun salon activé",
+      show_alert: false,
+    }).catch(() => {});
+    const menu = getChannelFilterMenu(chatId);
+    telegramBot.editMessageReplyMarkup(menu, {
+      chat_id: chatId,
+      message_id: query.message.message_id,
+    }).catch(() => {});
+    return;
+  }
+
+  // Back to main menu
+  if (query.data === "menu_back") {
+    telegramBot.answerCallbackQuery(query.id).catch(() => {});
+    telegramBot.editMessageText("Sélectionnez une option :", {
+      chat_id: chatId,
+      message_id: query.message.message_id,
+      reply_markup: TELEGRAM_MENU,
+    }).catch(() => {});
+    return;
+  }
+
+  // Original menu actions
+  const actions = {
+    menu_server: tgSendServer,
+    menu_members: tgSendMembers,
+    menu_stats: tgSendStats,
+    menu_channels: tgSendChannels,
+    menu_roles: tgSendRoles,
+    filter_channels: (cid) => {
+      const currentFilters = userChannelFilters.get(cid) || new Set();
+      const statusText = currentFilters.size === 0 
+        ? "✅ Tous les salons sont actifs" 
+        : currentFilters.has("__NONE__")
+        ? "❌ Aucun salon actif"
+        : `${currentFilters.size} salon(s) actif(s)`;
+      
+      telegramBot.editMessageText(
+        `🔔 *Filtres de salons*\n\n${statusText}\n\nCliquez sur un salon pour l'activer/désactiver :`,
+        {
+          chat_id: cid,
+          message_id: query.message.message_id,
+          parse_mode: "Markdown",
+          reply_markup: getChannelFilterMenu(cid),
+        }
+      ).catch(() => {});
+    },
+  };
+
+  const handler = actions[query.data];
+  if (handler) {
+    telegramBot.answerCallbackQuery(query.id).catch(() => {});
+    authorizedTelegramChats.add(chatId);
+    await handler(chatId);
+  }
+});
+
+// Function to send Discord events to Telegram
+function sendToTelegram(message, channelId = null, options = {}) {
+  const { disableEscape = false, ...rest } = options;
+  const text = disableEscape ? message : escapeMarkdown(message);
+  
+  authorizedTelegramChats.forEach(chatId => {
+    // If channel filter exists and message has a channelId, check if it's allowed
+    if (channelId && userChannelFilters.has(chatId)) {
+      const filters = userChannelFilters.get(chatId);
+      
+      // Empty Set = all channels allowed
+      if (filters.size === 0) {
+        // Send to all channels
+      } else if (filters.has("__NONE__")) {
+        // Block all channels
+        console.log(`[Telegram Filter] Blocked message from ${channelId} to chat ${chatId} (all disabled)`);
+        return;
+      } else if (!filters.has(channelId)) {
+        // Channel not in whitelist
+        console.log(`[Telegram Filter] Blocked message from ${channelId} to chat ${chatId} (not in filter)`);
+        return;
+      }
+    }
+    
+    telegramBot.sendMessage(chatId, text, { parse_mode: 'Markdown', ...rest }).catch(err => {
+      console.error(`Failed to send to Telegram chat ${chatId}:`, err.message);
+    });
+  });
+}
+
+// Export for use in other handlers
+global.sendToTelegram = sendToTelegram;
+global.telegramBot = telegramBot;
+global.authorizedTelegramChats = authorizedTelegramChats;
+global.userChannelFilters = userChannelFilters;
+
+console.log("📱 Telegram bot initialized!");
+
+// ==================== END TELEGRAM INTEGRATION ====================
+
+const commandsPath = path.join(__dirname, "commands");
+if (fs.existsSync(commandsPath)) {
+  const commandFolders = fs.readdirSync(commandsPath);
+  for (const folder of commandFolders) {
+    const folderPath = path.join(commandsPath, folder);
+    const stat = fs.statSync(folderPath);
+    if (stat.isDirectory()) {
+      const commandFiles = fs.readdirSync(folderPath).filter(file => file.endsWith(".js"));
+      for (const file of commandFiles) {
+        const filePath = path.join(folderPath, file);
+        const command = require(filePath);
+        if ("data" in command && "execute" in command) {
+          client.commands.set(command.data.name, command);
+          console.log(`📦 Command loaded: ${command.data.name}`);
+        }
+      }
+    }
+  }
+}
+
+require("./handlers/rules")(client);
+require("./handlers/joinUs")(client);
+require("./handlers/modDecision")(client);
+require("./handlers/generalChat")(client);
+require("./handlers/screenshots")(client);
+require("./handlers/badwords")(client);
+require("./handlers/spam")(client);
+require("./handlers/heroTips")(client);
+require("./handlers/svsReminder")(client);
+require("./handlers/onlineMembers")(client);
+
+require("./events/memberJoin")(client);
+require("./events/memberLeave")(client);
+
+// Forward new Discord messages to Telegram
+client.on(Events.MessageCreate, async (message) => {
+  if (message.author.bot || !message.inGuild()) return;
+  if (!message.channel || !message.channel.isTextBased()) return;
+
+  // If channel list is provided, only forward those
+  if (TELEGRAM_FORWARD_CHANNELS.length > 0 && !TELEGRAM_FORWARD_CHANNELS.includes(message.channel.id)) {
+    return;
+  }
+
+  const channelName = escapeMarkdown(message.channel.name || "salon");
+  const author = escapeMarkdown(message.author.tag);
+  const content = (message.content || "").trim();
+  const trimmedContent =
+    content.length > TELEGRAM_MAX_LEN ? `${content.slice(0, TELEGRAM_MAX_LEN)}…` : content;
+
+  const channelInfo = CHANNEL_INFO[message.channel.id] || { emoji: "💬", name: message.channel.name };
+
+  let text =
+    `${channelInfo.emoji} *#${channelName}*\n` +
+    `👤 ${author}\n` +
+    (trimmedContent ? `📝 ${escapeMarkdown(trimmedContent)}\n` : "📝 (vide)\n");
+
+  if (message.attachments.size > 0) {
+    const links = Array.from(message.attachments.values())
+      .map((att) => att.url)
+      .slice(0, 3);
+    const extra = message.attachments.size > links.length ? ` (+${message.attachments.size - links.length} fichiers)` : "";
+    text += `📎 Fichiers${extra}:\n${escapeMarkdown(links.join("\n"))}\n`;
+  }
+
+  // Pass channel ID to sendToTelegram so filters work
+  sendToTelegram(text.trim(), message.channel.id);
+});
+
+const RULES_CONTENT = {
+  color: 0x2b2d31,
+  title: "📜 Server Rules – Xavier Pro",
+  description:
+    "**Welcome to the official Xavier Pro Discord server.**\n" +
+    "Please read the rules carefully.\n\n" +
+    "__General Rules__\n" +
+    "▫ No insulting\n" +
+    "▫ No doxxing or sharing private information\n" +
+    "▫ No spam\n" +
+    "▫ English only\n" +
+    "▫ Discord name MUST match your in-game name\n\n" +
+    "__Member Rules__\n" +
+    "▫ Stay active\n" +
+    "▫ More than 4 days inactive = kick\n" +
+    "▫ Notify leaders if you need time off\n" +
+    "▫ Must participate in SVS\n" +
+    "▫ No toxic behavior\n\n" +
+    "**Press the button below to accept the rules.**",
+  footer: "Xavier Pro • Verification System",
+};
+
+const JOIN_US_CONTENT = {
+  color: 0x0099ff,
+  title: "📥 Admission – Submit your stats",
+  description:
+    "Welcome! To apply, please send **your game screenshots** or a **valid official stats link**.\n\n" +
+    "⚠ **No chatting in this channel** – only admission information.\n" +
+    "A private ticket will be created automatically for our staff.",
+  footer: "Xavier Pro – Recruitment System",
+};
+
+const DIVINE_TIPS_CONTENT = {
+  color: 0xffd700,
+  title: "🔥 Key Strategies for Reaching Divine 🔥",
+  description:
+    "**Prioritize Contracts and Chests**\n" +
+    "Focus on completing daily contracts and opening battle/skull chests to acquire coins, cards, and resources for upgrades.\n\n" +
+    "**Join a Syndicate**\n" +
+    "Team up to participate in events and sabotage modes, earning bonus points and faster progress.\n\n" +
+    "**Strategically Upgrade Heroes**\n" +
+    "Focus on your chosen heroes through common → rare → epic → legendary → mythic → **Divine**.\n\n" +
+    "**Utilize Joker Cards Wisely**\n" +
+    "Use Joker cards on your preferred heroes as they apply to anyone, unlike random drops.\n\n" +
+    "**Master Hero Abilities**\n" +
+    "Learn effective usage of your heroes' abilities and their roles within the team.\n\n" +
+    "**Develop Map Awareness**\n" +
+    "Know spawn points, purple chests, hot zones, and choke points to anticipate movements.\n\n" +
+    "**Practice Teamwork**\n" +
+    "Coordinate, communicate, and secure objectives together.\n\n" +
+    "__**Specific Hero Tips**__\n" +
+    "• **Shenji**: Use grenades to zone enemies rather than just for damage.\n" +
+    "• **Tess**: Use lightning balls for zoning and disrupting shields/abilities.\n" +
+    "• **Raven/Cyclops**: Don't spam abilities early; save them for late-game impact.\n" +
+    "• **SMG Users**: Use stimpacks offensively, not just for healing.\n" +
+    "• **Drones**: Use them as shields or distractions in combat.\n\n" +
+    "__**Additional Tips**__\n" +
+    "• **Don't be Greedy**: Avoid risky looting or early engagements.\n" +
+    "• **Learn to Disengage**: Fall back when fights are unfavorable.\n" +
+    "• **Play During Events**: Maximize participation for valuable rewards.\n" +
+    "• **Experiment**: Find the heroes and styles that suit you best.",
+  footer: "Xavier Pro • Strategy Guide",
+};
+
+async function smartUpdateChannel(channelId, channelKey, content, hasButton, clientRef) {
+  const state = loadChannelState();
+  const currentHash = contentHash(content);
+  const savedData = state[channelKey];
+
+  const channel = await clientRef.channels.fetch(channelId).catch(() => null);
+  if (!channel) {
+    console.log(`❌ Cannot access ${channelKey} channel.`);
+    return;
+  }
+
+  const messages = await channel.messages.fetch({ limit: 20 });
+
+  if (savedData && savedData.hash === currentHash && savedData.messageId) {
+    const existingMsg = messages.get(savedData.messageId);
+    if (existingMsg) {
+      console.log(`✅ ${channelKey}: no changes, keeping existing message.`);
+      return;
+    }
+  }
+
+  if (savedData && savedData.messageId) {
+    const oldMsg = messages.get(savedData.messageId);
+    if (oldMsg) {
+      await oldMsg.delete().catch(() => {});
+    }
+  }
+
+  const botMessages = messages.filter((m) => m.author.id === clientRef.user.id);
+  if (botMessages.size > 0) {
+    await channel.bulkDelete(botMessages).catch(() => {});
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(content.color)
+    .setTitle(content.title)
+    .setDescription(content.description)
+    .setFooter({ text: content.footer })
+    .setTimestamp();
+
+  let messageOptions = { embeds: [embed] };
+
+  if (hasButton) {
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("accept_rules")
+        .setLabel("✅ Accept the rules")
+        .setStyle(ButtonStyle.Success),
+    );
+    messageOptions.components = [row];
+  }
+
+  const newMsg = await channel.send(messageOptions);
+
+  state[channelKey] = {
+    hash: currentHash,
+    messageId: newMsg.id,
+  };
+  saveChannelState(state);
+
+  console.log(`📘 ${channelKey}: message updated.`);
+}
+
+client.once(Events.ClientReady, async () => {
+  console.log(`✅ ${client.user.tag} is now online!`);
+
+  await smartUpdateChannel(RULES_CHANNEL_ID, "rules", RULES_CONTENT, true, client);
+  await smartUpdateChannel(JOIN_US_CHANNEL_ID, "joinUs", JOIN_US_CONTENT, false, client);
+  await smartUpdateChannel(DIVINE_TIPS_CHANNEL_ID, "divineTips", DIVINE_TIPS_CONTENT, false, client);
+
+  // Notify Telegram that Discord bot is ready
+  console.log("📱 Discord-Telegram bridge is active!");
+});
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+  if (!command) {
+    console.log(`❌ Command not found: ${interaction.commandName}`);
+    return;
+  }
+
+  try {
+    await command.execute(interaction);
+    console.log(`✅ Command executed: ${interaction.commandName} by ${interaction.user.tag}`);
+  } catch (error) {
+    console.error(`❌ Error executing ${interaction.commandName}:`, error);
+    const errorMessage = "An error occurred while executing this command.";
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({ content: errorMessage, ephemeral: true });
+    } else {
+      await interaction.reply({ content: errorMessage, ephemeral: true });
+    }
+  }
+});
+
+const express = require("express");
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send("Xavier Pro Bot is running!");
+});
+
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok", bot: client.user?.tag || "starting..." });
+});
+
+app.listen(PORT, () => {
+  console.log(`🌐 HTTP server running on port ${PORT}`);
+});
+
+client.login(process.env.TOKEN);
