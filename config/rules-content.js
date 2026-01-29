@@ -4,7 +4,7 @@
  * The bot will automatically detect changes and update the message.
  */
 
-const RULES_BANNER_FILENAME = "rules-banner.png";
+const RULES_BANNER_FILENAME = "rules-banner.jpg";
 
 const RULES_TITLE = "📜 XAVIER PRO SERVER RULES";
 

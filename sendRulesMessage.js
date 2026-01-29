@@ -78,7 +78,14 @@ client.once("ready", async () => {
     const messages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
     const state = loadState();
 
-    // Delete old message if exists
+    // Delete old messages if exist
+    if (state.bannerMsgId && messages) {
+      const oldBanner = messages.get(state.bannerMsgId);
+      if (oldBanner) {
+        await oldBanner.delete().catch(() => {});
+        console.log("🗑️ Deleted old banner");
+      }
+    }
     if (state.messageId && messages) {
       const oldMsg = messages.get(state.messageId);
       if (oldMsg) {
@@ -104,29 +111,28 @@ client.once("ready", async () => {
         .setStyle(ButtonStyle.Success)
     );
 
-    // Prepare message payload
-    const messagePayload = {
-      embeds: [embed],
-      components: [row],
-    };
-
-    // Add banner if exists
+    // Send banner FIRST (so it appears above the rules)
+    let bannerMsgId = null;
     if (fs.existsSync(bannerPath)) {
       const attachment = new AttachmentBuilder(bannerPath, { name: RULES_BANNER_FILENAME });
-      messagePayload.files = [attachment];
-      embed.setImage(`attachment://${RULES_BANNER_FILENAME}`);
-      console.log("🖼️ Banner image attached");
+      const bannerMsg = await channel.send({ files: [attachment] });
+      bannerMsgId = bannerMsg.id;
+      console.log("🖼️ Banner image posted");
     } else {
       console.log(`⚠️ Banner not found at: ${bannerPath}`);
     }
 
-    // Send message
-    const newMsg = await channel.send(messagePayload);
+    // Then send the embed with rules
+    const newMsg = await channel.send({
+      embeds: [embed],
+      components: [row],
+    });
 
     // Save state
     const newState = {
       hash: rulesHash(),
       messageId: newMsg.id,
+      bannerMsgId: bannerMsgId,
     };
     await saveState(newState);
 

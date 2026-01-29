@@ -69,20 +69,13 @@ function rulesHash() {
 }
 
 function createRulesEmbed() {
-  const embed = new EmbedBuilder()
+  return new EmbedBuilder()
     .setColor(RULES_COLOR)
     .setTitle(RULES_TITLE)
     .setDescription(RULES_DESCRIPTION)
     .addFields(RULES_FIELDS)
     .setFooter({ text: RULES_FOOTER })
     .setTimestamp();
-
-  // Set image to attachment if banner exists
-  if (fs.existsSync(bannerPath)) {
-    embed.setImage(`attachment://${RULES_BANNER_FILENAME}`);
-  }
-
-  return embed;
 }
 
 function createAcceptButton() {
@@ -128,7 +121,14 @@ module.exports = (client) => {
         return;
       }
 
-      // Hash changed or new → delete old message and post new one
+      // Hash changed or new → delete old messages and post new ones
+      if (state.bannerMsgId) {
+        const oldBanner = messages.get(state.bannerMsgId);
+        if (oldBanner) {
+          await oldBanner.delete().catch(() => {});
+          console.log("🗑️ Rules: deleted old banner");
+        }
+      }
       if (state.messageId) {
         const oldMsg = messages.get(state.messageId);
         if (oldMsg) {
@@ -141,25 +141,27 @@ module.exports = (client) => {
       const embed = createRulesEmbed();
       const row = createAcceptButton();
 
-      // Prepare message payload
-      const messagePayload = {
-        embeds: [embed],
-        components: [row],
-      };
-
-      // Add banner as attachment if it exists
+      // Send banner image FIRST (so it appears above the rules)
+      let bannerMsgId = null;
       if (fs.existsSync(bannerPath)) {
         const attachment = new AttachmentBuilder(bannerPath, { name: RULES_BANNER_FILENAME });
-        messagePayload.files = [attachment];
+        const bannerMsg = await channel.send({ files: [attachment] });
+        bannerMsgId = bannerMsg.id;
+        console.log("🖼️ Rules banner posted");
       } else {
         console.log("⚠️ Rules banner not found at:", bannerPath);
       }
 
-      const newMsg = await channel.send(messagePayload);
+      // Then send the embed with rules
+      const newMsg = await channel.send({
+        embeds: [embed],
+        components: [row],
+      });
 
       // Save new state
       state.hash = currentHash;
       state.messageId = newMsg.id;
+      state.bannerMsgId = bannerMsgId;
       await saveState(state);
 
       console.log("📜 Rules message posted successfully!");
