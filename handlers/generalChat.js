@@ -24,17 +24,19 @@ module.exports = (client) => {
     const hasVideo =
       message.attachments.size > 0 &&
       message.attachments.some((a) => isVideoAttachment(a));
+    // allowGif: false = les GIFs ne sont PAS considérés comme images (donc autorisés)
     const hasImage =
       message.attachments.size > 0 &&
-      message.attachments.some((a) => isImageAttachment(a, { allowGif: true }));
+      message.attachments.some((a) => isImageAttachment(a, { allowGif: false }));
     const hasMediaEmbed =
       message.embeds.length > 0 &&
       message.embeds.some((e) => {
         const type = (e.type || "").toLowerCase();
+        // Autoriser les GIFs (type 'gifv' de Tenor/Giphy)
+        if (type === "gifv") return false;
         return (
           type === "image" ||
           type === "video" ||
-          type === "gifv" ||
           e.image ||
           e.thumbnail ||
           e.video
@@ -54,8 +56,9 @@ module.exports = (client) => {
 
     message.author
       .send(
-        "? In **general-chat**, images, GIFs, and videos are not allowed.\n" +
-          "Please use the appropriate channels for media.",
+        "⚠️ In **general-chat**, images and videos are not allowed.\n" +
+          "**GIFs are permitted!** Use Tenor or Giphy to share GIFs.\n" +
+          "For other media, please use the appropriate channels.",
       )
       .catch(() => {});
   });

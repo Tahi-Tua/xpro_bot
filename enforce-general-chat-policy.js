@@ -77,7 +77,7 @@ client.once("ready", async () => {
           [PermissionFlagsBits.AddReactions]: true,
           [PermissionFlagsBits.SendMessages]: true,
           [PermissionFlagsBits.AttachFiles]: false,
-          [PermissionFlagsBits.EmbedLinks]: false,
+          [PermissionFlagsBits.EmbedLinks]: true, // Requis pour les GIFs Tenor/Giphy
           [PermissionFlagsBits.CreatePublicThreads]: false,
           [PermissionFlagsBits.CreatePrivateThreads]: false,
           [PermissionFlagsBits.SendMessagesInThreads]: false,
