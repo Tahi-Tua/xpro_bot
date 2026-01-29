@@ -73,17 +73,25 @@ module.exports = (client) => {
         const currentHash = heroHash(hero);
         const savedData = state[hero.id];
 
-        if (savedData && savedData.hash === currentHash && savedData.messageId) {
-          const existingMsg = messages.get(savedData.messageId);
-          if (existingMsg) {
-            continue;
+        // Si le hash est identique, on ne fait rien (même si le message a été supprimé)
+        // Cela évite de re-poster les mêmes tips à chaque redémarrage
+        if (savedData && savedData.hash === currentHash) {
+          // Vérifier si le message existe toujours pour la cohérence du state
+          const existingMsg = savedData.messageId ? messages.get(savedData.messageId) : null;
+          if (!existingMsg) {
+            console.log(`ℹ️ Hero-Tips: ${hero.name} - message not found but hash unchanged, skipping re-post`);
           }
+          continue;
         }
 
+        // Le hash a changé OU c'est un nouveau héros → mettre à jour
+        
+        // Supprimer l'ancien message s'il existe
         if (savedData && savedData.messageId) {
           const oldMsg = messages.get(savedData.messageId);
           if (oldMsg) {
             await oldMsg.delete().catch(() => {});
+            console.log(`🗑️ Hero-Tips: deleted old message for ${hero.name}`);
           }
         }
 
