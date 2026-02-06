@@ -44,6 +44,7 @@ const {
 
 const { runStartupHistoryScan } = require("./handlers/historyScan");
 const { handlePollVote, checkExpiredPolls } = require("./handlers/pollManager");
+const { handleSurveyButton, handleSurveyModalSubmit, checkExpiredSurveys } = require("./handlers/surveyManager");
 
 const stateFile = path.join(__dirname, "data/channelState.json");
 const profileStateFile = path.join(__dirname, "data/profileState.json");
@@ -289,6 +290,14 @@ client.once(Events.ClientReady, async (c) => {
   } catch (err) {
     console.error("❌ Error in checkExpiredPolls:", err);
   }
+
+  // Check for expired surveys and reschedule remaining ones
+  try {
+    checkExpiredSurveys(c);
+    console.log("✅ Survey state checked");
+  } catch (err) {
+    console.error("❌ Error in checkExpiredSurveys:", err);
+  }
   // Exemple : runStartupHistoryScan si tu l’utilises
   try {
     await runStartupHistoryScan(client);
@@ -309,6 +318,38 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
           content: "❌ An error occurred while processing your vote.",
+          ephemeral: true,
+        });
+      }
+    }
+    return;
+  }
+
+  // Handle survey button clicks (open modal)
+  if (interaction.isButton() && interaction.customId.startsWith("survey_respond_")) {
+    try {
+      await handleSurveyButton(interaction);
+    } catch (error) {
+      console.error("Error handling survey button:", error);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: "❌ An error occurred while opening the survey form.",
+          ephemeral: true,
+        });
+      }
+    }
+    return;
+  }
+
+  // Handle survey modal submissions
+  if (interaction.isModalSubmit() && interaction.customId.startsWith("survey_modal_")) {
+    try {
+      await handleSurveyModalSubmit(interaction);
+    } catch (error) {
+      console.error("Error handling survey modal:", error);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: "❌ An error occurred while submitting your response.",
           ephemeral: true,
         });
       }
