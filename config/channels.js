@@ -19,8 +19,8 @@ module.exports = {
   SUGGESTION_CHANNEL_ID: "1381583643834581013",
   HALL_OF_FAME_CHANNEL_ID: "1380349437070540841",
 
-  // Survey results channel (staff-only) — set via env or hardcode after creation
-  SURVEY_RESULTS_CHANNEL_ID: process.env.SURVEY_RESULTS_CHANNEL_ID || "",
+  // Survey results channel (staff-only)
+  SURVEY_RESULTS_CHANNEL_ID: process.env.SURVEY_RESULTS_CHANNEL_ID || "1469465152972652565",
 
   // Channels excluded from spam/badwords filters and scans.
   FILTER_EXEMPT_CHANNEL_IDS: [
