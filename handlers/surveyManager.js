@@ -123,8 +123,9 @@ function saveSurveyState(state) {
  * @param {string} question       The survey question
  * @param {string} durationChoice Duration string ("24h", "1h30m", …)
  * @param {boolean} anonymous     Whether responses are anonymous in results
+ * @param {import("discord.js").Attachment|null} imageAttachment  Optional image
  */
-async function createSurvey(interaction, question, durationChoice = "24h", anonymous = false) {
+async function createSurvey(interaction, question, durationChoice = "24h", anonymous = false, imageAttachment = null) {
   try {
     // ── Validate results channel ──────────────────────────────────────
     if (!SURVEY_RESULTS_CHANNEL_ID) {
@@ -146,6 +147,7 @@ async function createSurvey(interaction, question, durationChoice = "24h", anony
     const durationText = getDurationText(durationChoice);
     const closesAt = Date.now() + surveyDuration;
     const closesTimestamp = Math.floor(closesAt / 1000);
+    const imageUrl = imageAttachment ? imageAttachment.url : null;
 
     // ── Build the public embed ────────────────────────────────────────
     const embed = new EmbedBuilder()
@@ -159,6 +161,11 @@ async function createSurvey(interaction, question, durationChoice = "24h", anony
       )
       .setFooter({ text: `Created by ${interaction.user.displayName} • Click below to respond` })
       .setTimestamp();
+
+    // Add image if provided
+    if (imageUrl) {
+      embed.setImage(imageUrl);
+    }
 
     // ── Build the button ──────────────────────────────────────────────
     const row = new ActionRowBuilder().addComponents(
@@ -191,6 +198,7 @@ async function createSurvey(interaction, question, durationChoice = "24h", anony
       guildId: interaction.guild.id,
       question,
       anonymous,
+      imageUrl: imageUrl || null,
       responses: {},        // { userId: { text, displayName, updatedAt } }
       createdAt: Date.now(),
       createdBy: interaction.user.id,
@@ -384,6 +392,11 @@ async function handleSurveyModalSubmit(interaction) {
         .setFooter({ text: `Click below to respond • ${responseCount} response${responseCount !== 1 ? "s" : ""} so far` })
         .setTimestamp(new Date(survey.createdAt));
 
+      // Preserve image if one was attached
+      if (survey.imageUrl) {
+        updatedEmbed.setImage(survey.imageUrl);
+      }
+
       await message.edit({ embeds: [updatedEmbed] });
     }
   } catch (err) {
@@ -437,6 +450,11 @@ async function closeSurvey(client, messageId) {
           )
           .setFooter({ text: `Survey closed • ${responseCount} response${responseCount !== 1 ? "s" : ""} received` })
           .setTimestamp();
+
+        // Preserve image if one was attached
+        if (survey.imageUrl) {
+          closedEmbed.setImage(survey.imageUrl);
+        }
 
         // Disabled button
         const disabledRow = new ActionRowBuilder().addComponents(

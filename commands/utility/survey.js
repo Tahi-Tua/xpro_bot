@@ -34,6 +34,12 @@ module.exports = {
         .setName("anonymous")
         .setDescription("Hide respondent names in the results channel? Default: false")
         .setRequired(false)
+    )
+    .addAttachmentOption((option) =>
+      option
+        .setName("image")
+        .setDescription("Optional image to illustrate the question.")
+        .setRequired(false)
     ),
 
   async execute(interaction) {
@@ -52,6 +58,18 @@ module.exports = {
     const question = interaction.options.getString("question");
     const durationChoice = interaction.options.getString("duration") || "24h";
     const anonymous = interaction.options.getBoolean("anonymous") ?? false;
+    const imageAttachment = interaction.options.getAttachment("image") || null;
+
+    // ── Validate image format if provided ────────────────────────────
+    if (imageAttachment) {
+      const validTypes = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+      if (!validTypes.includes(imageAttachment.contentType?.split(";")[0])) {
+        return interaction.reply({
+          content: "❌ Invalid file type. Please attach an image (PNG, JPG, GIF, or WEBP).",
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+    }
 
     // ── Validate duration format ─────────────────────────────────────
     const durationRegex = /^(\d+\s*h(?:\s*\d+\s*m)?|\d+\s*m)$/i;
@@ -64,6 +82,6 @@ module.exports = {
     }
 
     // ── Create the survey ────────────────────────────────────────────
-    await createSurvey(interaction, question, durationChoice, anonymous);
+    await createSurvey(interaction, question, durationChoice, anonymous, imageAttachment);
   },
 };
