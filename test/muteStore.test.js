@@ -19,15 +19,17 @@ fs.writeFileSync(testStateFile, "{}");
 // Now require the module
 const muteStore = require("../utils/muteStore");
 
-test.afterEach(() => {
+test.afterEach(async () => {
   // Clean up test state between tests
+  await muteStore.flushSaves();
   if (fs.existsSync(testStateFile)) {
     fs.writeFileSync(testStateFile, "{}");
   }
 });
 
-test.after(() => {
+test.after(async () => {
   // Final cleanup
+  await muteStore.flushSaves();
   if (fs.existsSync(testStateFile)) {
     fs.unlinkSync(testStateFile);
   }
@@ -90,5 +92,6 @@ test("muteStore: expired mutes return false for isMuted", async () => {
   await muteStore.recordMute(guildId, userId, expiresAt, "test");
   
   const muted = muteStore.isMuted(guildId, userId);
+  await muteStore.flushSaves();
   assert.equal(muted, false);
 });

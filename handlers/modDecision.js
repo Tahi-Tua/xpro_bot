@@ -1,6 +1,7 @@
 const {
   Events,
   MessageFlags,
+  PermissionFlagsBits,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -10,6 +11,8 @@ const {
   ButtonStyle,
 } = require("discord.js");
 const { runJoinUsTicketDecision } = require("../utils/joinUsDecision");
+const { LEADER_ROLE_ID, STAFF_ROLE_ID } = require("../config/channels");
+const { withTimeout } = require("../utils/discordUtils");
 
 /**
  * Validate that a string is a valid Discord snowflake ID (17-19 digits).
@@ -19,6 +22,28 @@ const { runJoinUsTicketDecision } = require("../utils/joinUsDecision");
  */
 function isValidDiscordId(id) {
   return typeof id === 'string' && /^\d{17,19}$/.test(id);
+}
+
+function canReviewApplication(interaction) {
+  const roles = interaction.member?.roles?.cache;
+  const hasReviewRole =
+    roles?.has(LEADER_ROLE_ID) ||
+    roles?.has(STAFF_ROLE_ID);
+
+  const hasReviewPermission =
+    interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
+    interaction.memberPermissions?.has(PermissionFlagsBits.ManageRoles);
+
+  return Boolean(hasReviewRole || hasReviewPermission);
+}
+
+async function replyNoReviewPermission(interaction) {
+  await interaction
+    .reply({
+      content: "❌ You do not have permission to review applications.",
+      flags: MessageFlags.Ephemeral,
+    })
+    .catch(() => {});
 }
 
 module.exports = (client) => {
@@ -35,6 +60,11 @@ module.exports = (client) => {
           await interaction
             .reply({ content: "❌ Ticket context missing.", flags: MessageFlags.Ephemeral })
             .catch(() => {});
+          return;
+        }
+
+        if (!canReviewApplication(interaction)) {
+          await replyNoReviewPermission(interaction);
           return;
         }
 
@@ -150,6 +180,11 @@ module.exports = (client) => {
           return;
         }
 
+        if (!canReviewApplication(interaction)) {
+          await replyNoReviewPermission(interaction);
+          return;
+        }
+
         if (!userId || !isValidDiscordId(userId)) {
           await interaction
             .reply({ 
@@ -162,7 +197,7 @@ module.exports = (client) => {
 
         let decisionMessage = null;
         if (messageId) {
-          decisionMessage = await channel.messages.fetch(messageId).catch(() => null);
+          decisionMessage = await withTimeout(channel.messages.fetch(messageId), "Join-Us decision message fetch").catch(() => null);
         }
 
         const result = await runJoinUsTicketDecision({
@@ -203,6 +238,11 @@ module.exports = (client) => {
       if (!cid.startsWith("deny_custom_reason:")) return;
 
       try {
+        if (!canReviewApplication(interaction)) {
+          await replyNoReviewPermission(interaction);
+          return;
+        }
+
         const [, messageId] = cid.split(":");
         const modal = new ModalBuilder()
           .setCustomId(`deny_reason_modal:${messageId}`)
@@ -247,6 +287,11 @@ module.exports = (client) => {
           return;
         }
 
+        if (!canReviewApplication(interaction)) {
+          await replyNoReviewPermission(interaction);
+          return;
+        }
+
         // Validate Discord ID format
         if (!userId || !isValidDiscordId(userId)) {
           await interaction
@@ -260,7 +305,7 @@ module.exports = (client) => {
 
         let decisionMessage = null;
         if (messageId) {
-          decisionMessage = await channel.messages.fetch(messageId).catch(() => null);
+          decisionMessage = await withTimeout(channel.messages.fetch(messageId), "Join-Us decision message fetch").catch(() => null);
         }
 
         const result = await runJoinUsTicketDecision({

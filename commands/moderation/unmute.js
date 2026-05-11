@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require("discord.js");
+const { liftModerationMute } = require("../../utils/muteActions");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -11,13 +12,16 @@ module.exports = {
 
   async execute(interaction) {
     const target = interaction.options.getUser("member");
-    const member = interaction.guild.members.cache.get(target.id);
-
-    if (!member)
-      return interaction.reply({ content: "Member not found.", flags: MessageFlags.Ephemeral });
 
     try {
-      await member.timeout(null);
+      const result = await liftModerationMute(
+        interaction.guild,
+        target.id,
+        `Manual unmute by ${interaction.user.tag}`,
+      );
+      if (!result.memberFound && !result.clearedStore) {
+        return interaction.reply({ content: "Member not found.", flags: MessageFlags.Ephemeral });
+      }
     } catch (err) {
       console.log(err);
       return interaction.reply({ content: "Unable to unmute this member.", flags: MessageFlags.Ephemeral });

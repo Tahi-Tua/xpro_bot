@@ -8,7 +8,7 @@ const fs = require("fs");
 const fsPromises = require("fs").promises;
 const path = require("path");
 
-const STATE_PATH = path.join(__dirname, "..", "data", "muteState.json");
+const STATE_PATH = process.env.MUTE_STATE_FILE || path.join(__dirname, "..", "data", "muteState.json");
 
 let store = {};
 let saveQueue = Promise.resolve();
@@ -23,7 +23,7 @@ function loadStore() {
       store = JSON.parse(raw || "{}");
     } else {
       store = {};
-      fs.writeFileSync(STATE_PATH, JSON.stringify(store, null, 2));
+      saveStore();
     }
   } catch (err) {
     console.warn("⚠️ Could not load mute state:", err.message);
@@ -49,6 +49,38 @@ function saveStore() {
   return saveQueue;
 }
 
+function isExpired(muteData, now = Date.now()) {
+  return Number(muteData?.expiresAt || 0) <= now;
+}
+
+function pruneExpiredMute(guildId, userId, { persist = true } = {}) {
+  if (!store[guildId]?.[userId] || !isExpired(store[guildId][userId])) {
+    return false;
+  }
+
+  delete store[guildId][userId];
+  if (Object.keys(store[guildId]).length === 0) {
+    delete store[guildId];
+  }
+  if (persist) saveStore();
+  return true;
+}
+
+function pruneAllExpiredMutes() {
+  let changed = false;
+  for (const [guildId, guildMutes] of Object.entries(store)) {
+    for (const userId of Object.keys(guildMutes)) {
+      changed = pruneExpiredMute(guildId, userId, { persist: false }) || changed;
+    }
+  }
+  if (changed) saveStore();
+  return changed;
+}
+
+function flushSaves() {
+  return saveQueue;
+}
+
 /**
  * Record a mute with its expiration time.
  * @param {string} guildId - The guild ID
@@ -65,7 +97,7 @@ function recordMute(guildId, userId, expiresAt, reason = "Automatic mute") {
     reason,
     createdAt: Date.now(),
   };
-  saveStore();
+  return saveStore();
 }
 
 /**
@@ -79,8 +111,9 @@ function removeMute(guildId, userId) {
     if (Object.keys(store[guildId]).length === 0) {
       delete store[guildId];
     }
-    saveStore();
+    return saveStore();
   }
+  return Promise.resolve();
 }
 
 /**
@@ -89,6 +122,9 @@ function removeMute(guildId, userId) {
  * @returns {Object} Map of userId -> mute data
  */
 function getGuildMutes(guildId) {
+  for (const userId of Object.keys(store[guildId] || {})) {
+    pruneExpiredMute(guildId, userId);
+  }
   return store[guildId] || {};
 }
 
@@ -97,6 +133,7 @@ function getGuildMutes(guildId) {
  * @returns {Object} The full mute store
  */
 function getAllMutes() {
+  pruneAllExpiredMutes();
   return store;
 }
 
@@ -107,6 +144,7 @@ function getAllMutes() {
  * @returns {boolean}
  */
 function isMuted(guildId, userId) {
+  if (pruneExpiredMute(guildId, userId)) return false;
   return !!(store[guildId] && store[guildId][userId]);
 }
 
@@ -117,6 +155,7 @@ function isMuted(guildId, userId) {
  * @returns {Object|null} Mute data or null
  */
 function getMuteInfo(guildId, userId) {
+  if (pruneExpiredMute(guildId, userId)) return null;
   return store[guildId]?.[userId] || null;
 }
 
@@ -130,4 +169,5 @@ module.exports = {
   getAllMutes,
   isMuted,
   getMuteInfo,
+  flushSaves,
 };

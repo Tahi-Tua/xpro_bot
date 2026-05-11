@@ -1,31 +1,60 @@
+const { PermissionFlagsBits } = require("discord.js");
 const { MEMBER_ROLE_NAME, MEMBER_ROLE_ID, PENDING_ROLE_ID, GUEST_ROLE_ID, VISITOR_ROLE_NAME } = require("../config/channels");
+const { sendDmWithRateLimit } = require("./dmRateLimiter");
+const { withTimeout } = require("./discordUtils");
 
 const UNVERIFIED_ROLE_NAME = "Unverified";
 const APPLICANT_ROLE_NAME = "Applicant";
 
+async function getBotMember(guild) {
+  const botUserId = guild.client?.user?.id;
+  if (!botUserId) return guild.members.me || null;
+  return guild.members.me || withTimeout(guild.members.fetch(botUserId), "Join-Us bot member fetch").catch(() => null);
+}
+
+async function ensureCanManageRole(guild, role) {
+  if (!role) return false;
+
+  const botMember = await getBotMember(guild);
+  if (!botMember?.permissions?.has(PermissionFlagsBits.ManageRoles)) {
+    throw new Error("Bot lacks Manage Roles permission");
+  }
+
+  if (role.managed) {
+    throw new Error(`Role '${role.name}' is managed by an integration`);
+  }
+
+  if (role.position >= botMember.roles.highest.position) {
+    throw new Error(`Bot role is not high enough to manage '${role.name}'`);
+  }
+
+  return true;
+}
+
 async function removePendingRole(guild, member) {
   const pendingRole = guild.roles.cache.get(PENDING_ROLE_ID);
   if (pendingRole && member.roles.cache.has(pendingRole.id)) {
-    await member.roles.remove(pendingRole).catch(() => {});
+    await ensureCanManageRole(guild, pendingRole);
+    await withTimeout(member.roles.remove(pendingRole), "Join-Us pending role remove").catch(() => {});
   }
 }
 
 async function cleanupJoinUsMessages(guild, ticketChannel) {
-  const messages = await ticketChannel.messages.fetch({ limit: 50 }).catch(() => null);
+  const messages = await withTimeout(ticketChannel.messages.fetch({ limit: 50 }), "Join-Us metadata fetch").catch(() => null);
   if (!messages) return;
 
   const metaMsg = messages.find((m) => m.content.startsWith("META_JOINUS:"));
   if (!metaMsg) return;
 
   const [, joinChannelId, userMsgId, botMsgId] = metaMsg.content.split(":");
-  const joinChannel = await guild.channels.fetch(joinChannelId).catch(() => null);
+  const joinChannel = await withTimeout(guild.channels.fetch(joinChannelId), "Join-Us source channel fetch").catch(() => null);
   if (!joinChannel || !joinChannel.isTextBased()) return;
 
-  const userMsg = await joinChannel.messages.fetch(userMsgId).catch(() => null);
-  if (userMsg) await userMsg.delete().catch(() => {});
+  const userMsg = await withTimeout(joinChannel.messages.fetch(userMsgId), "Join-Us user message fetch").catch(() => null);
+  if (userMsg) await withTimeout(userMsg.delete(), "Join-Us user message delete").catch(() => {});
 
-  const botMsg = await joinChannel.messages.fetch(botMsgId).catch(() => null);
-  if (botMsg) await botMsg.delete().catch(() => {});
+  const botMsg = await withTimeout(joinChannel.messages.fetch(botMsgId), "Join-Us bot message fetch").catch(() => null);
+  if (botMsg) await withTimeout(botMsg.delete(), "Join-Us bot message delete").catch(() => {});
 }
 
 async function applyAcceptRoles(guild, member) {
@@ -41,7 +70,8 @@ async function applyAcceptRoles(guild, member) {
     if (GUEST_ROLE_ID) {
       const guestRole = guild.roles.cache.get(GUEST_ROLE_ID);
       if (guestRole && !member.roles.cache.has(guestRole.id)) {
-        await member.roles.add(guestRole);
+        await ensureCanManageRole(guild, guestRole);
+        await withTimeout(member.roles.add(guestRole), "Join-Us guest role add");
         result.addedGuest = true;
       }
     }
@@ -55,7 +85,8 @@ async function applyAcceptRoles(guild, member) {
       ? guild.roles.cache.get(MEMBER_ROLE_ID)
       : guild.roles.cache.find((r) => r.name === MEMBER_ROLE_NAME);
     if (memberRole && !member.roles.cache.has(memberRole.id)) {
-      await member.roles.add(memberRole);
+      await ensureCanManageRole(guild, memberRole);
+      await withTimeout(member.roles.add(memberRole), "Join-Us member role add");
       result.addedMember = true;
     }
   } catch (err) {
@@ -66,7 +97,8 @@ async function applyAcceptRoles(guild, member) {
   try {
     const applicantRole = guild.roles.cache.find((r) => r.name === APPLICANT_ROLE_NAME);
     if (applicantRole && member.roles.cache.has(applicantRole.id)) {
-      await member.roles.remove(applicantRole);
+      await ensureCanManageRole(guild, applicantRole);
+      await withTimeout(member.roles.remove(applicantRole), "Join-Us applicant role remove");
       result.removedApplicant = true;
     }
   } catch (err) {
@@ -77,7 +109,8 @@ async function applyAcceptRoles(guild, member) {
   try {
     const unverifiedRole = guild.roles.cache.find((r) => r.name === UNVERIFIED_ROLE_NAME);
     if (unverifiedRole && member.roles.cache.has(unverifiedRole.id)) {
-      await member.roles.remove(unverifiedRole);
+      await ensureCanManageRole(guild, unverifiedRole);
+      await withTimeout(member.roles.remove(unverifiedRole), "Join-Us unverified role remove");
       result.removedUnverified = true;
     }
   } catch (err) {
@@ -97,7 +130,8 @@ async function applyDeclineRoles(guild, member) {
   try {
     const applicantRole = guild.roles.cache.find((r) => r.name === APPLICANT_ROLE_NAME);
     if (applicantRole && member.roles.cache.has(applicantRole.id)) {
-      await member.roles.remove(applicantRole);
+      await ensureCanManageRole(guild, applicantRole);
+      await withTimeout(member.roles.remove(applicantRole), "Join-Us applicant role remove");
       result.removedApplicant = true;
     }
   } catch (err) {
@@ -108,7 +142,8 @@ async function applyDeclineRoles(guild, member) {
     // Remove Unverified role so declined users can explore limited channels
     const unverifiedRole = guild.roles.cache.find((r) => r.name === UNVERIFIED_ROLE_NAME);
     if (unverifiedRole && member.roles.cache.has(unverifiedRole.id)) {
-      await member.roles.remove(unverifiedRole);
+      await ensureCanManageRole(guild, unverifiedRole);
+      await withTimeout(member.roles.remove(unverifiedRole), "Join-Us unverified role remove");
       result.removedUnverified = true;
     }
   } catch (err) {
@@ -119,7 +154,8 @@ async function applyDeclineRoles(guild, member) {
     // Add Visitor role to give access only to specific channels (team-search, clips, screenshots, etc.)
     const visitorRole = guild.roles.cache.find((r) => r.name === VISITOR_ROLE_NAME);
     if (visitorRole && !member.roles.cache.has(visitorRole.id)) {
-      await member.roles.add(visitorRole);
+      await ensureCanManageRole(guild, visitorRole);
+      await withTimeout(member.roles.add(visitorRole), "Join-Us visitor role add");
       result.addedVisitor = true;
     }
   } catch (err) {
@@ -131,7 +167,7 @@ async function applyDeclineRoles(guild, member) {
 
 async function closeTicketSoon(ticketChannel) {
   setTimeout(() => {
-    ticketChannel.delete().catch(() => {});
+    withTimeout(ticketChannel.delete(), "Join-Us ticket delete").catch(() => {});
   }, 5000);
 }
 
@@ -144,36 +180,38 @@ async function runJoinUsTicketDecision({
   moderatorLabel,
   reason = null,
 }) {
-  const member = await guild.members.fetch(userId).catch(() => null);
+  const member = await withTimeout(guild.members.fetch(userId), "Join-Us applicant member fetch").catch(() => null);
   if (!member) {
-    if (decisionMessage) await decisionMessage.edit({ components: [] }).catch(() => {});
+    if (decisionMessage) await withTimeout(decisionMessage.edit({ components: [] }), "Join-Us decision disable").catch(() => {});
     await closeTicketSoon(ticketChannel);
     return { ok: false, error: "User not found (left server?)" };
   }
 
-  if (decisionMessage) await decisionMessage.edit({ components: [] }).catch(() => {});
+  if (decisionMessage) await withTimeout(decisionMessage.edit({ components: [] }), "Join-Us decision disable").catch(() => {});
 
-  await removePendingRole(guild, member);
+  await removePendingRole(guild, member).catch((err) => {
+    console.warn(`⚠️ Failed to remove Pending role from ${member.user?.tag}: ${err.message}`);
+  });
   await cleanupJoinUsMessages(guild, ticketChannel);
 
   if (decision === "accept") {
     const applyResult = await applyAcceptRoles(guild, member);
     const roleChangeOk = applyResult.addedGuest || applyResult.addedMember;
 
-    await ticketChannel
-      .send(
+    await withTimeout(
+      ticketChannel.send(
         roleChangeOk
           ? `✅ Application **ACCEPTED** by ${moderatorLabel}${reason ? `\nReason: ${reason}` : ""}.`
           : `✅ Application **ACCEPTED** by ${moderatorLabel}, but I couldn't change roles.\n⚠️ Please ensure the bot's role is above Guest/Member and has 'Manage Roles' permission.`,
-      )
-      .catch(() => {});
+      ),
+      "Join-Us accept result send",
+    ).catch(() => {});
 
-    await member
-      .send(
+    await sendDmWithRateLimit(
+      member,
         "✅ Your application has been **accepted**!\n" +
           "An XPro staff member will reach out to you **in-game later today** to get you set up.",
-      )
-      .catch(() => {});
+    );
 
     await closeTicketSoon(ticketChannel);
     return roleChangeOk ? { ok: true } : { ok: false, error: "Insufficient permissions to change roles on acceptance." };
@@ -182,11 +220,12 @@ async function runJoinUsTicketDecision({
   if (decision === "deny") {
     await applyDeclineRoles(guild, member);
 
-    await ticketChannel
-      .send(
+    await withTimeout(
+      ticketChannel.send(
         `❌ Application **DECLINED** by ${moderatorLabel}${reason ? `\nReason: ${reason}` : ""}.`,
-      )
-      .catch(() => {});
+      ),
+      "Join-Us decline result send",
+    ).catch(() => {});
 
     const teamSearchMention = `<#1381575870468198460>`;
     const clipsMention = `<#1381581265542844496>`;
@@ -208,7 +247,7 @@ async function runJoinUsTicketDecision({
       `${balanceChangesMention}\n` +
       `${memesMention}`;
 
-    await member.send(declineMessage).catch(() => {});
+    await sendDmWithRateLimit(member, declineMessage);
 
     await closeTicketSoon(ticketChannel);
     return { ok: true };
@@ -218,6 +257,6 @@ async function runJoinUsTicketDecision({
 }
 
 module.exports = {
+  ensureCanManageRole,
   runJoinUsTicketDecision,
 };
-

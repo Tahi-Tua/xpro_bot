@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require("discord.js");
+const { applyModerationMute, liftModerationMute } = require("../../utils/muteActions");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -20,7 +21,7 @@ module.exports = {
 
   async execute(interaction) {
     const target = interaction.options.getUser("member");
-    const member = interaction.guild.members.cache.get(target.id);
+    const member = await interaction.guild.members.fetch(target.id).catch(() => null);
     const durationInput = interaction.options.getString("duration");
     const reason = interaction.options.getString("reason") || "No reason provided";
 
@@ -64,7 +65,10 @@ module.exports = {
     }
 
     try {
-      await member.timeout(durationMs, reason);
+      await applyModerationMute(member, `${reason} (by ${interaction.user.tag})`, durationMs);
+      setTimeout(() => {
+        liftModerationMute(interaction.guild, member.id, "Manual mute expired").catch(() => {});
+      }, durationMs);
     } catch (err) {
       console.log(err);
       return interaction.reply({ content: "Unable to mute this member.", flags: MessageFlags.Ephemeral });

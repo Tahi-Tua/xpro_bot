@@ -8,8 +8,9 @@ const {
   PermissionsBitField,
 } = require("discord.js");
 const { JOIN_US_CHANNEL_ID, LEADER_ROLE_ID, STAFF_ROLE_ID, PENDING_ROLE_ID, ADMIN_USER_ID } = require("../config/channels");
-const { sendToTelegram } = require("../utils/telegram");
 const { runJoinUsTicketDecision } = require("../utils/joinUsDecision");
+const { sendDmWithRateLimit } = require("../utils/dmRateLimiter");
+const { withTimeout } = require("../utils/discordUtils");
 
 // Track ticket creation in progress for each user to prevent race conditions
 const creatingTickets = new Set();
@@ -30,11 +31,10 @@ module.exports = (client) => {
       // invalid.
       if (creatingTickets.has(message.author.id)) {
         // Optionally notify the user that their application is being processed
-        await message.author
-          .send(
-            "⚠️ Your application is already being processed. Please wait a moment."
-          )
-          .catch(() => {});
+        await sendDmWithRateLimit(
+          message.author,
+          "⚠️ Your application is already being processed. Please wait a moment.",
+        );
         return;
       }
 
@@ -48,13 +48,13 @@ module.exports = (client) => {
       if (!isValid) {
         // If the message is invalid we don't want to lock the user in the
         // `creatingTickets` set.  Just delete the message and notify the user.
-        await message.delete().catch(() => {});
-        return message.author
-          .send(
-            "❌ Your message in **Join-Us** was removed.\n" +
-              "Please send **screenshots** or an **official stats link** only.",
-          )
-          .catch(() => {});
+        await withTimeout(message.delete(), "Join-Us invalid message delete").catch(() => {});
+        await sendDmWithRateLimit(
+          message.author,
+          "❌ Your message in **Join-Us** was removed.\n" +
+            "Please send **screenshots** or an **official stats link** only.",
+        );
+        return;
       }
 
       // Acquire lock IMMEDIATELY after validation, BEFORE any async operations.
@@ -71,28 +71,29 @@ module.exports = (client) => {
       );
       if (existingTicketEarly) {
         creatingTickets.delete(message.author.id);
-        return message.author
-          .send(`⚠️ You already have an open ticket: ${existingTicketEarly}.`)
-          .catch(() => {});
+        await sendDmWithRateLimit(message.author, `⚠️ You already have an open ticket: ${existingTicketEarly}.`);
+        return;
       }
 
-      const botReply = await message.channel.send({
-        content:
-          "🙏 Thank you for your information!\n" +
-          "**Our administrators are now reviewing your application.**",
-        allowedMentions: { users: [message.author.id] },
-      });
+      const botReply = await withTimeout(
+        message.channel.send({
+          content:
+            "🙏 Thank you for your information!\n" +
+            "**Our administrators are now reviewing your application.**",
+          allowedMentions: { users: [message.author.id] },
+        }),
+        "Join-Us acknowledgement send",
+      );
 
-      const admin = await client.users.fetch(ADMIN_USER_ID).catch(() => null);
+      const admin = await withTimeout(client.users.fetch(ADMIN_USER_ID), "Join-Us admin fetch").catch(() => null);
       if (admin) {
-        await admin
-          .send(
-            `📥 **New Join-Us Application**\n` +
-              `From: **${message.author.tag}**\n` +
-              `Channel: ${message.channel}\n` +
-              `Time: ${new Date().toLocaleString()}`,
-          )
-          .catch(() => {});
+        await sendDmWithRateLimit(
+          admin,
+          `📥 **New Join-Us Application**\n` +
+            `From: **${message.author.tag}**\n` +
+            `Channel: ${message.channel}\n` +
+            `Time: ${new Date().toLocaleString()}`,
+        );
       }
 
       const originalMessageId = message.id;
@@ -103,7 +104,7 @@ module.exports = (client) => {
 
       const pendingRole = guild.roles.cache.get(PENDING_ROLE_ID);
       if (pendingRole && !member.roles.cache.has(pendingRole.id)) {
-        await member.roles.add(pendingRole).catch(() => {});
+        await withTimeout(member.roles.add(pendingRole), "Join-Us pending role add").catch(() => {});
       }
 
       const leaderRole = guild.roles.cache.get(LEADER_ROLE_ID);
@@ -155,39 +156,48 @@ module.exports = (client) => {
         });
       }
 
-      const ticket = await guild.channels.create({
-        name: `ticket-${message.author.username.slice(0, 10)}`,
-        type: ChannelType.GuildText,
-        topic: message.author.id,
-        permissionOverwrites,
-      });
+      const ticket = await withTimeout(
+        guild.channels.create({
+          name: `ticket-${message.author.username.slice(0, 10)}`,
+          type: ChannelType.GuildText,
+          topic: message.author.id,
+          permissionOverwrites,
+        }),
+        "Join-Us ticket channel create",
+      );
 
       const roleMentions = [leaderRole ? `<@&${LEADER_ROLE_ID}>` : '', staffRole ? `<@&${STAFF_ROLE_ID}>` : ''].filter(Boolean).join(' ');
-      const decisionMessage = await ticket.send({
-        content: `📥 New application from **${message.author.tag}**\n${roleMentions} <@${ADMIN_USER_ID}>`,
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x0099ff)
-            .setTitle("📝 New Application")
-            .setDescription(
-              "Review the candidate's screenshots and/or stats.\n\n" +
-                "Once a decision is made, click **ACCEPT** or **DECLINE**.",
-            ),
-        ],
-        components: [row],
-      });
+      await withTimeout(
+        ticket.send({
+          content: `📥 New application from **${message.author.tag}**\n${roleMentions} <@${ADMIN_USER_ID}>`,
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x0099ff)
+              .setTitle("📝 New Application")
+              .setDescription(
+                "Review the candidate's screenshots and/or stats.\n\n" +
+                  "Once a decision is made, click **ACCEPT** or **DECLINE**.",
+              ),
+          ],
+          components: [row],
+        }),
+        "Join-Us decision message send",
+      );
 
       // Send attachments or stats link (no automatic image analysis)
       if (message.attachments.size > 0) {
-        await ticket.send({ files: [...message.attachments.values()] });
+        await withTimeout(ticket.send({ files: [...message.attachments.values()] }), "Join-Us attachment copy");
       } else {
-        await ticket.send(`🔗 Stats link: ${message.content}`);
+        await withTimeout(ticket.send(`🔗 Stats link: ${message.content}`), "Join-Us stats link copy");
       }
 
-      await ticket.send({
-        content: `META_JOINUS:${message.channel.id}:${originalMessageId}:${botReplyId}`,
-        allowedMentions: { parse: [] },
-      });
+      await withTimeout(
+        ticket.send({
+          content: `META_JOINUS:${message.channel.id}:${originalMessageId}:${botReplyId}`,
+          allowedMentions: { parse: [] },
+        }),
+        "Join-Us metadata send",
+      );
 
       // Note: AI analysis and auto-acceptance removed. Decisions are manual via buttons.
     } catch (err) {

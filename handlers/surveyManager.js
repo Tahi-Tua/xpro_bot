@@ -33,6 +33,7 @@ const { SURVEY_RESULTS_CHANNEL_ID, STAFF_ROLE_ID, LEADER_ROLE_ID } = require("..
 
 const surveyStateFile = path.join(__dirname, "../data/surveyState.json");
 let surveySaveQueue = Promise.resolve();
+const surveyLocks = new Map();
 const DEFAULT_SURVEY_DURATION = 24 * 60 * 60 * 1000; // 24h
 
 const DURATION_PRESETS = {
@@ -111,6 +112,19 @@ function saveSurveyState(state) {
       console.warn("⚠️ Unexpected error in survey save queue:", err.message);
     });
   return surveySaveQueue;
+}
+
+function withSurveyLock(messageId, task) {
+  const previous = surveyLocks.get(messageId) || Promise.resolve();
+  const next = previous.catch(() => {}).then(task);
+  const tracked = next.finally(() => {
+    if (surveyLocks.get(messageId) === tracked) {
+      surveyLocks.delete(messageId);
+    }
+  }).catch(() => {});
+
+  surveyLocks.set(messageId, tracked);
+  return next;
 }
 
 // ============================================================================
@@ -205,7 +219,7 @@ async function createSurvey(interaction, question, durationChoice = "24h", anony
       duration: surveyDuration,
       durationChoice,
     };
-    saveSurveyState(state);
+    await saveSurveyState(state);
 
     // ── Schedule closure ──────────────────────────────────────────────
     scheduleSurveyClosure(interaction.client, message.id, surveyDuration);
@@ -314,101 +328,110 @@ async function handleSurveyModalSubmit(interaction) {
   if (!interaction.customId.startsWith("survey_modal_")) return;
 
   const surveyMessageId = interaction.customId.replace("survey_modal_", "");
-  const state = loadSurveyState();
-  const survey = state[surveyMessageId];
-
-  if (!survey) {
-    return interaction.reply({
-      content: "❌ This survey no longer exists.",
-      flags: MessageFlags.Ephemeral,
-    });
-  }
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const answer = interaction.fields.getTextInputValue("survey_answer").trim();
   if (!answer) {
-    return interaction.reply({
+    return interaction.editReply({
       content: "❌ Your response cannot be empty.",
-      flags: MessageFlags.Ephemeral,
     });
   }
 
-  const isUpdate = !!survey.responses[interaction.user.id];
-  const userId = interaction.user.id;
-  const displayName = interaction.member?.displayName || interaction.user.displayName || interaction.user.username;
+  const result = await withSurveyLock(surveyMessageId, async () => {
+    const state = loadSurveyState();
+    const survey = state[surveyMessageId];
 
-  // Save the response
-  survey.responses[userId] = {
-    text: answer,
-    displayName,
-    username: interaction.user.username,
-    updatedAt: Date.now(),
-  };
-  saveSurveyState(state);
-
-  // ── Post / update in results channel ────────────────────────────────
-  try {
-    const resultsChannel = await interaction.client.channels.fetch(SURVEY_RESULTS_CHANNEL_ID).catch(() => null);
-    if (resultsChannel) {
-      const responseEmbed = new EmbedBuilder()
-        .setColor(isUpdate ? "#FFA500" : "#57F287")
-        .setTitle(isUpdate ? "✏️ Survey response updated" : "📩 New survey response")
-        .setDescription(`**Question:** ${survey.question}`)
-        .addFields({ name: "Response", value: answer.length > 1024 ? answer.substring(0, 1021) + "…" : answer })
-        .setTimestamp();
-
-      if (survey.anonymous) {
-        responseEmbed.setFooter({ text: `Anonymous respondent • ${isUpdate ? "Updated" : "New"} response` });
-      } else {
-        responseEmbed
-          .setAuthor({
-            name: displayName,
-            iconURL: interaction.user.displayAvatarURL({ dynamic: true, size: 64 }),
-          })
-          .setFooter({ text: `User: ${interaction.user.username} (${userId})` });
-      }
-
-      await resultsChannel.send({ embeds: [responseEmbed] });
+    if (!survey) {
+      return { error: "❌ This survey no longer exists." };
     }
-  } catch (err) {
-    console.error("[Survey] Failed to post response in results channel:", err);
-  }
 
-  // ── Update the original survey embed (response count) ──────────────
-  try {
-    const channel = await interaction.client.channels.fetch(survey.channelId);
-    const message = await channel.messages.fetch(surveyMessageId);
-    if (message) {
-      const responseCount = Object.keys(survey.responses).length;
-      const closesTimestamp = Math.floor((survey.createdAt + survey.duration) / 1000);
-      const updatedEmbed = new EmbedBuilder()
-        .setTitle("📋 Survey")
-        .setDescription(survey.question)
-        .setColor("#2B82D1")
-        .addFields(
-          { name: "📊 Responses", value: `${responseCount}`, inline: true },
-          { name: "⏰ Closes", value: `<t:${closesTimestamp}:R>`, inline: true },
-          { name: "📝 Mode", value: survey.anonymous ? "Anonymous" : "Public", inline: true },
-        )
-        .setFooter({ text: `Click below to respond • ${responseCount} response${responseCount !== 1 ? "s" : ""} so far` })
-        .setTimestamp(new Date(survey.createdAt));
-
-      // Preserve image if one was attached
-      if (survey.imageUrl) {
-        updatedEmbed.setImage(survey.imageUrl);
-      }
-
-      await message.edit({ embeds: [updatedEmbed] });
+    if (Date.now() - survey.createdAt > survey.duration) {
+      return { error: "⏰ This survey has closed. You can no longer respond." };
     }
-  } catch (err) {
-    console.warn("[Survey] Failed to update survey embed:", err.message);
+
+    const isUpdate = !!survey.responses[interaction.user.id];
+    const userId = interaction.user.id;
+    const displayName = interaction.member?.displayName || interaction.user.displayName || interaction.user.username;
+
+    // Save the response
+    survey.responses[userId] = {
+      text: answer,
+      displayName,
+      username: interaction.user.username,
+      updatedAt: Date.now(),
+    };
+    await saveSurveyState(state);
+
+    // ── Post / update in results channel ────────────────────────────────
+    try {
+      const resultsChannel = await interaction.client.channels.fetch(SURVEY_RESULTS_CHANNEL_ID).catch(() => null);
+      if (resultsChannel) {
+        const responseEmbed = new EmbedBuilder()
+          .setColor(isUpdate ? "#FFA500" : "#57F287")
+          .setTitle(isUpdate ? "✏️ Survey response updated" : "📩 New survey response")
+          .setDescription(`**Question:** ${survey.question}`)
+          .addFields({ name: "Response", value: answer.length > 1024 ? answer.substring(0, 1021) + "…" : answer })
+          .setTimestamp();
+
+        if (survey.anonymous) {
+          responseEmbed.setFooter({ text: `Anonymous respondent • ${isUpdate ? "Updated" : "New"} response` });
+        } else {
+          responseEmbed
+            .setAuthor({
+              name: displayName,
+              iconURL: interaction.user.displayAvatarURL({ dynamic: true, size: 64 }),
+            })
+            .setFooter({ text: `User: ${interaction.user.username} (${userId})` });
+        }
+
+        await resultsChannel.send({ embeds: [responseEmbed] });
+      }
+    } catch (err) {
+      console.error("[Survey] Failed to post response in results channel:", err);
+    }
+
+    // ── Update the original survey embed (response count) ──────────────
+    try {
+      const channel = await interaction.client.channels.fetch(survey.channelId);
+      const message = await channel.messages.fetch(surveyMessageId);
+      if (message) {
+        const responseCount = Object.keys(survey.responses).length;
+        const closesTimestamp = Math.floor((survey.createdAt + survey.duration) / 1000);
+        const updatedEmbed = new EmbedBuilder()
+          .setTitle("📋 Survey")
+          .setDescription(survey.question)
+          .setColor("#2B82D1")
+          .addFields(
+            { name: "📊 Responses", value: `${responseCount}`, inline: true },
+            { name: "⏰ Closes", value: `<t:${closesTimestamp}:R>`, inline: true },
+            { name: "📝 Mode", value: survey.anonymous ? "Anonymous" : "Public", inline: true },
+          )
+          .setFooter({ text: `Click below to respond • ${responseCount} response${responseCount !== 1 ? "s" : ""} so far` })
+          .setTimestamp(new Date(survey.createdAt));
+
+        // Preserve image if one was attached
+        if (survey.imageUrl) {
+          updatedEmbed.setImage(survey.imageUrl);
+        }
+
+        await message.edit({ embeds: [updatedEmbed] });
+      }
+    } catch (err) {
+      console.warn("[Survey] Failed to update survey embed:", err.message);
+    }
+
+    return { isUpdate };
+  });
+
+  if (result.error) {
+    return interaction.editReply({ content: result.error });
   }
 
   // ── Confirm to the respondent ───────────────────────────────────────
-  await interaction.reply({
-    content: isUpdate
+  await interaction.editReply({
+    content: result.isUpdate
       ? "✅ Your survey response has been **updated** successfully!"
       : "✅ Your survey response has been **submitted** successfully! Thank you.",
-    flags: MessageFlags.Ephemeral,
   });
 }
 
@@ -427,105 +450,107 @@ function scheduleSurveyClosure(client, messageId, duration = DEFAULT_SURVEY_DURA
 }
 
 async function closeSurvey(client, messageId) {
-  try {
-    const state = loadSurveyState();
-    const survey = state[messageId];
-    if (!survey) return;
-
-    console.log(`[Survey] Closing survey "${survey.question}" with ${Object.keys(survey.responses).length} responses`);
-
-    // ── Disable the button on original message ──────────────────────
+  return withSurveyLock(messageId, async () => {
     try {
-      const channel = await client.channels.fetch(survey.channelId);
-      const message = await channel.messages.fetch(messageId);
-      if (message) {
-        const responseCount = Object.keys(survey.responses).length;
-        const closedEmbed = new EmbedBuilder()
-          .setTitle("📋 Survey — Closed")
-          .setDescription(survey.question)
-          .setColor("#95A5A6") // grey
-          .addFields(
-            { name: "📊 Total responses", value: `${responseCount}`, inline: true },
-            { name: "📝 Mode", value: survey.anonymous ? "Anonymous" : "Public", inline: true },
-          )
-          .setFooter({ text: `Survey closed • ${responseCount} response${responseCount !== 1 ? "s" : ""} received` })
-          .setTimestamp();
+      const state = loadSurveyState();
+      const survey = state[messageId];
+      if (!survey) return;
 
-        // Preserve image if one was attached
-        if (survey.imageUrl) {
-          closedEmbed.setImage(survey.imageUrl);
+      console.log(`[Survey] Closing survey "${survey.question}" with ${Object.keys(survey.responses).length} responses`);
+
+      // ── Disable the button on original message ──────────────────────
+      try {
+        const channel = await client.channels.fetch(survey.channelId);
+        const message = await channel.messages.fetch(messageId);
+        if (message) {
+          const responseCount = Object.keys(survey.responses).length;
+          const closedEmbed = new EmbedBuilder()
+            .setTitle("📋 Survey — Closed")
+            .setDescription(survey.question)
+            .setColor("#95A5A6") // grey
+            .addFields(
+              { name: "📊 Total responses", value: `${responseCount}`, inline: true },
+              { name: "📝 Mode", value: survey.anonymous ? "Anonymous" : "Public", inline: true },
+            )
+            .setFooter({ text: `Survey closed • ${responseCount} response${responseCount !== 1 ? "s" : ""} received` })
+            .setTimestamp();
+
+          // Preserve image if one was attached
+          if (survey.imageUrl) {
+            closedEmbed.setImage(survey.imageUrl);
+          }
+
+          // Disabled button
+          const disabledRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`survey_respond_${messageId}`)
+              .setLabel("📝 Survey Closed")
+              .setStyle(ButtonStyle.Secondary)
+              .setDisabled(true),
+          );
+
+          await message.edit({ embeds: [closedEmbed], components: [disabledRow] });
         }
-
-        // Disabled button
-        const disabledRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`survey_respond_${messageId}`)
-            .setLabel("📝 Survey Closed")
-            .setStyle(ButtonStyle.Secondary)
-            .setDisabled(true),
-        );
-
-        await message.edit({ embeds: [closedEmbed], components: [disabledRow] });
+      } catch (err) {
+        console.warn("[Survey] Could not update original message on close:", err.message);
       }
-    } catch (err) {
-      console.warn("[Survey] Could not update original message on close:", err.message);
-    }
 
-    // ── Post summary in results channel ─────────────────────────────
-    try {
-      const resultsChannel = await client.channels.fetch(SURVEY_RESULTS_CHANNEL_ID).catch(() => null);
-      if (resultsChannel) {
-        const responses = Object.values(survey.responses);
-        const responseCount = responses.length;
+      // ── Post summary in results channel ─────────────────────────────
+      try {
+        const resultsChannel = await client.channels.fetch(SURVEY_RESULTS_CHANNEL_ID).catch(() => null);
+        if (resultsChannel) {
+          const responses = Object.values(survey.responses);
+          const responseCount = responses.length;
 
-        const summaryEmbed = new EmbedBuilder()
-          .setTitle("📋 Survey closed — Summary")
-          .setDescription(`**Question:** ${survey.question}`)
-          .setColor("#95A5A6")
-          .addFields(
-            { name: "Total responses", value: `${responseCount}`, inline: true },
-            { name: "Mode", value: survey.anonymous ? "🔒 Anonymous" : "👁️ Public", inline: true },
-            { name: "Duration", value: getDurationText(survey.durationChoice), inline: true },
-          )
-          .setTimestamp();
+          const summaryEmbed = new EmbedBuilder()
+            .setTitle("📋 Survey closed — Summary")
+            .setDescription(`**Question:** ${survey.question}`)
+            .setColor("#95A5A6")
+            .addFields(
+              { name: "Total responses", value: `${responseCount}`, inline: true },
+              { name: "Mode", value: survey.anonymous ? "🔒 Anonymous" : "👁️ Public", inline: true },
+              { name: "Duration", value: getDurationText(survey.durationChoice), inline: true },
+            )
+            .setTimestamp();
 
-        await resultsChannel.send({ embeds: [summaryEmbed] });
+          await resultsChannel.send({ embeds: [summaryEmbed] });
 
-        // Post all responses as a recap (max 10 per embed batch to stay under limits)
-        if (responseCount > 0) {
-          const chunks = chunkArray(responses, 10);
-          for (let i = 0; i < chunks.length; i++) {
-            const chunk = chunks[i];
-            const recapEmbed = new EmbedBuilder()
-              .setTitle(`📋 All responses (${i * 10 + 1}–${i * 10 + chunk.length} of ${responseCount})`)
-              .setColor("#2B82D1");
+          // Post all responses as a recap (max 10 per embed batch to stay under limits)
+          if (responseCount > 0) {
+            const chunks = chunkArray(responses, 10);
+            for (let i = 0; i < chunks.length; i++) {
+              const chunk = chunks[i];
+              const recapEmbed = new EmbedBuilder()
+                .setTitle(`📋 All responses (${i * 10 + 1}–${i * 10 + chunk.length} of ${responseCount})`)
+                .setColor("#2B82D1");
 
-            for (const resp of chunk) {
-              const fieldName = survey.anonymous
-                ? "Anonymous"
-                : `${resp.displayName} (${resp.username})`;
-              const fieldValue = resp.text.length > 1024
-                ? resp.text.substring(0, 1021) + "…"
-                : resp.text;
-              recapEmbed.addFields({ name: fieldName, value: fieldValue });
+              for (const resp of chunk) {
+                const fieldName = survey.anonymous
+                  ? "Anonymous"
+                  : `${resp.displayName} (${resp.username})`;
+                const fieldValue = resp.text.length > 1024
+                  ? resp.text.substring(0, 1021) + "…"
+                  : resp.text;
+                recapEmbed.addFields({ name: fieldName, value: fieldValue });
+              }
+
+              await resultsChannel.send({ embeds: [recapEmbed] });
             }
-
-            await resultsChannel.send({ embeds: [recapEmbed] });
           }
         }
+      } catch (err) {
+        console.error("[Survey] Failed to post closing summary:", err);
       }
-    } catch (err) {
-      console.error("[Survey] Failed to post closing summary:", err);
+
+      // ── Remove from state ────────────────────────────────────────────
+      delete state[messageId];
+      await saveSurveyState(state);
+
+      console.log(`✅ Survey ${messageId} closed.`);
+    } catch (error) {
+      console.error("[Survey] Error closing survey:", error);
     }
-
-    // ── Remove from state ────────────────────────────────────────────
-    delete state[messageId];
-    saveSurveyState(state);
-
-    console.log(`✅ Survey ${messageId} closed.`);
-  } catch (error) {
-    console.error("[Survey] Error closing survey:", error);
-  }
+  });
 }
 
 // ============================================================================

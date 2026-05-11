@@ -1,11 +1,16 @@
 const { Events, EmbedBuilder } = require("discord.js");
-const { GENERAL_CHAT_ID, BUG_REPORTS_CHANNEL_ID, FILTER_EXEMPT_CHANNEL_IDS, FILTER_ENFORCED_CATEGORY_IDS, ALLOWED_GLOBAL_MENTION_IDS } = require("../config/channels");
+const { BUG_REPORTS_CHANNEL_ID, FILTER_EXEMPT_CHANNEL_IDS, FILTER_ENFORCED_CATEGORY_IDS, ALLOWED_GLOBAL_MENTION_IDS } = require("../config/channels");
 const { hasBypassRole } = require("../utils/bypass");
 const { sendModerationLog } = require("./badwords");
 const { increment: incViolations, getCount: getViolationCount, hasReachedThreshold, reset: resetViolations } = require("../utils/violationStore");
 const { assignReadOnlyRole } = require("../utils/readOnlyRole");
 const { READ_ONLY_THRESHOLD } = require("../config/channels");
 const { sendToTelegram } = require("../utils/telegram");
+const {
+  applyModerationMute,
+  findMutedRole,
+  liftModerationMute,
+} = require("../utils/muteActions");
 const {
   ZERO_WIDTH_REGEX,
   stripDiacritics,
@@ -75,8 +80,8 @@ const CONFIG = {
 };
 
 // Threshold for automatic 1-day mute based on total spam violations
-const SPAM_MUTE_THRESHOLD = 10;
-const SPAM_MUTE_DURATION_MS = 24 * 60 * 60 * 1000; // 1 day
+const SPAM_MUTE_THRESHOLD = Number(process.env.SPAM_MUTE_THRESHOLD || 10);
+const SPAM_MUTE_DURATION_MS = Number(process.env.SPAM_THRESHOLD_MUTE_DURATION_MS || 24 * 60 * 60 * 1000);
 
 // Memory management: Reduce retention to 2 hours (down from 6) to limit memory
 // usage on active servers. This prevents unbounded memory growth while still
@@ -88,9 +93,9 @@ const VIOLATION_HISTORY_RETENTION_MS = 2 * 60 * 60 * 1000;
 // is reasonable for most Discord servers while preventing unbounded growth.
 const MAX_MAP_ENTRIES = 5000;
 
-const DISCORD_INVITE_REGEX = /(discord\.(gg|io|me|li)|discordapp\.com\/invite)\/[a-zA-Z0-9]+/gi;
-const URL_REGEX = /https?:\/\/[^\s]+/gi;
-const EMOJI_REGEX = /<a?:[a-zA-Z0-9_]+:\d+>|[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu;
+const DISCORD_INVITE_REGEX = /(discord\.(gg|io|me|li)|discordapp\.com\/invite)\/[a-zA-Z0-9]+/i;
+const URL_REGEX = /https?:\/\/[^\s]+/i;
+const EMOJI_REGEX = /<a?:[a-zA-Z0-9_]+:\d+>|[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u;
 
 const GIF_HOSTS = [
   "tenor.com",
@@ -111,6 +116,11 @@ function getUserData(userId) {
     enforceMapSizeLimit(spamData);
   }
   return spamData.get(userId);
+}
+
+function findMatches(content, regex) {
+  const flags = regex.flags.includes("g") ? regex.flags : `${regex.flags}g`;
+  return String(content || "").match(new RegExp(regex.source, flags)) || [];
 }
 
 async function sendMemberViolationReport(user, violations, isSpamViolation = false) {
@@ -357,7 +367,7 @@ function checkMentionSpam(message) {
 }
 
 function checkLinkSpam(userData, content, now) {
-  const links = content.match(URL_REGEX) || [];
+  const links = findMatches(content, URL_REGEX);
   const nonGifLinks = links.filter((link) => !isGifLink(link));
   
   if (now - userData.linkWindowStart > CONFIG.linkSpam.windowMs) {
@@ -373,8 +383,8 @@ function checkLinkSpam(userData, content, now) {
 function checkInviteLinks(content) {
   if (!CONFIG.inviteDetection.enabled) return { triggered: false };
   
-  const invites = content.match(DISCORD_INVITE_REGEX);
-  if (!invites) return { triggered: false };
+  const invites = findMatches(content, DISCORD_INVITE_REGEX);
+  if (invites.length === 0) return { triggered: false };
   
   const unauthorized = invites.filter(
     (inv) => !CONFIG.inviteDetection.allowedInvites.some((allowed) => inv.includes(allowed))
@@ -387,7 +397,7 @@ function checkInviteLinks(content) {
 }
 
 function checkEmojiSpam(content) {
-  const emojis = content.match(EMOJI_REGEX) || [];
+  const emojis = findMatches(content, EMOJI_REGEX);
   return emojis.length > CONFIG.emojiSpam.maxEmojis;
 }
 
@@ -437,7 +447,7 @@ function detectSpamViolations(message) {
     violations.push(`Mention spam: ${mentionCheck.reason}`);
   }
 
-  const links = content.match(URL_REGEX) || [];
+  const links = findMatches(content, URL_REGEX);
   const nonGifLinks = links.filter((link) => !isGifLink(link));
   if (nonGifLinks.length > CONFIG.linkSpam.maxLinks) {
     violations.push("Link spam (too many links)");
@@ -466,30 +476,17 @@ function detectSpamViolations(message) {
 
 async function applyMute(member, guild, reason, duration) {
   try {
-    const mutedRole = guild.roles.cache.find((r) => r.name.toLowerCase() === "muted");
-    const expiresAt = Date.now() + duration;
-    
-    if (mutedRole) {
-      await member.roles.add(mutedRole);
-      mutedUsers.add(member.id);
-      
-      // Persist mute state to survive bot restarts
-      muteStore.recordMute(guild.id, member.id, expiresAt, reason);
-      
-      setTimeout(async () => {
-        if (mutedUsers.has(member.id)) {
-          await member.roles.remove(mutedRole).catch(() => {});
-          mutedUsers.delete(member.id);
-          muteStore.removeMute(guild.id, member.id);
-        }
-      }, duration);
-      
-      return true;
-    } else {
-      // Discord's native timeout - no need to persist as Discord handles it
-      await member.timeout(duration, reason);
-      return true;
-    }
+    await applyModerationMute(member, reason, duration);
+    mutedUsers.add(member.id);
+
+    setTimeout(async () => {
+      if (mutedUsers.has(member.id)) {
+        await liftModerationMute(guild, member.id, "Automatic mute expired").catch(() => {});
+        mutedUsers.delete(member.id);
+      }
+    }, duration);
+
+    return true;
   } catch (error) {
     console.error(`Failed to mute ${member.user.tag}:`, error.message);
     return false;
@@ -511,8 +508,13 @@ async function restoreMutesFromState(client) {
     const guild = client.guilds.cache.get(guildId);
     if (!guild) continue;
 
-    const mutedRole = guild.roles.cache.find((r) => r.name.toLowerCase() === "muted");
-    if (!mutedRole) continue;
+    const mutedRole = findMutedRole(guild);
+    if (!mutedRole) {
+      for (const userId of Object.keys(guildMutes)) {
+        muteStore.removeMute(guildId, userId);
+      }
+      continue;
+    }
 
     for (const [userId, muteData] of Object.entries(guildMutes)) {
       const { expiresAt } = muteData;
@@ -526,8 +528,7 @@ async function restoreMutesFromState(client) {
 
       if (now >= expiresAt) {
         // Mute has expired, remove it
-        await member.roles.remove(mutedRole).catch(() => {});
-        muteStore.removeMute(guildId, userId);
+        await liftModerationMute(guild, userId, "Stored mute expired").catch(() => {});
         mutedUsers.delete(userId);
         expired++;
         console.log(`🔓 Expired mute lifted for ${member.user.tag} in ${guild.name}`);
@@ -538,12 +539,8 @@ async function restoreMutesFromState(client) {
         
         setTimeout(async () => {
           if (mutedUsers.has(userId)) {
-            const currentMember = await guild.members.fetch(userId).catch(() => null);
-            if (currentMember) {
-              await currentMember.roles.remove(mutedRole).catch(() => {});
-            }
+            await liftModerationMute(guild, userId, "Restored mute expired").catch(() => {});
             mutedUsers.delete(userId);
-            muteStore.removeMute(guildId, userId);
             console.log(`🔓 Scheduled mute lifted for ${userId} in ${guild.name}`);
           }
         }, remainingTime);
@@ -700,10 +697,7 @@ module.exports = (client) => {
     
     if (violations.length === 0) return;
     
-    const shouldDeleteMessage = message.channel.id !== GENERAL_CHAT_ID;
-    if (shouldDeleteMessage) {
-      await message.delete().catch(() => {});
-    }
+    await message.delete().catch(() => {});
     
     const warningCount = addWarning(message.author.id);
     const shouldMute = warningCount >= CONFIG.punishment.warningsBeforeMute;
@@ -735,7 +729,7 @@ module.exports = (client) => {
     // Persist violation count
     const totalViolations = incViolations(message.author.id, violationObjects.length);
     
-    // Check if user should be auto-muted for reaching spam threshold (20+ violations)
+    // Check if user should be auto-muted for reaching spam threshold.
     const spamThresholdMuted = await checkAndApplySpamThresholdMute(
       message.member,
       message.guild,
@@ -763,7 +757,7 @@ module.exports = (client) => {
         { name: "Warnings", value: `${warningCount}/${CONFIG.punishment.warningsBeforeMute}`, inline: true },
         { name: "Total Spam Violations", value: `**${totalViolations}**`, inline: true },
         { name: "Violations", value: violations.join("\n") },
-        { name: "Action", value: shouldDeleteMessage ? punishment : `${punishment} (message kept)` },
+        { name: "Action", value: punishment },
         { name: "Message Preview", value: content.substring(0, 200) || "(empty)" }
       )
       .setTimestamp();

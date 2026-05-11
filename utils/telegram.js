@@ -5,6 +5,7 @@ const TelegramBot = require('node-telegram-bot-api');
 // 'Markdown', 'HTML', etc.  Leaving it undefined will omit the
 // parse_mode option entirely.
 const DEFAULT_PARSE_MODE = process.env.TELEGRAM_PARSE_MODE || 'Markdown';
+const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
 
 // Telegram bot credentials.  These must be defined in your environment or
 // .env file.  No fallback values are provided here to avoid leaking
@@ -61,14 +62,16 @@ async function sendToTelegram(message, options = {}) {
     delete sendOptions.parse_mode;
   }
 
+  const safeMessage = String(message || "").slice(0, TELEGRAM_MAX_MESSAGE_LENGTH);
+
   try {
-    await telegramBotInstance.sendMessage(TG_CHAT_ID, message, sendOptions);
+    await telegramBotInstance.sendMessage(TG_CHAT_ID, safeMessage, sendOptions);
     console.log('✅ Telegram alert sent');
   } catch (err) {
     console.error('❌ Failed to send Telegram message:', err.message);
     // Attempt plain text fallback if a parse error occurs
     try {
-      await telegramBotInstance.sendMessage(TG_CHAT_ID, message);
+      await telegramBotInstance.sendMessage(TG_CHAT_ID, safeMessage);
     } catch (retryErr) {
       console.error('❌ Telegram fallback failed:', retryErr.message);
     }
@@ -76,5 +79,6 @@ async function sendToTelegram(message, options = {}) {
 }
 
 module.exports = {
+  TELEGRAM_MAX_MESSAGE_LENGTH,
   sendToTelegram,
 };

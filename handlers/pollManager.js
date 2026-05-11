@@ -13,6 +13,7 @@ const pollStateFile = path.join(__dirname, "../data/pollState.json");
 
 // Queue to serialize async writes and prevent race conditions
 let pollSaveQueue = Promise.resolve();
+const pollLocks = new Map();
 
 // Default poll expiration: 24 hours in milliseconds
 const DEFAULT_POLL_DURATION = 24 * 60 * 60 * 1000;
@@ -114,6 +115,20 @@ function savePollState(state) {
   return pollSaveQueue;
 }
 
+function withPollLock(messageId, task) {
+  const previous = pollLocks.get(messageId) || Promise.resolve();
+  const next = previous.catch(() => {}).then(task);
+  const tracked = next.finally(() => {
+    if (pollLocks.get(messageId) === tracked) {
+      pollLocks.delete(messageId);
+    }
+  }).catch(() => {});
+
+  pollLocks.set(messageId, tracked);
+
+  return next;
+}
+
 // ============================================================================
 // Create and send poll
 // ============================================================================
@@ -150,7 +165,7 @@ async function createPoll(interaction, title, options, durationChoice = "24h") {
       duration: pollDuration,
       durationChoice,
     };
-    savePollState(pollState);
+    await savePollState(pollState);
 
     // Schedule poll closure
     schedulePollClosure(interaction.client, message.id, pollDuration);
@@ -318,56 +333,61 @@ async function handlePollVote(interaction) {
   if (!interaction.customId.startsWith("poll_opt_")) return;
 
   try {
-    const pollState = loadPollState();
-    const poll = pollState[interaction.message.id];
-
-    if (!poll) {
-      return await interaction.reply({
-        content: "❌ Poll not found or expired.",
-        flags: MessageFlags.Ephemeral,
-      });
-    }
-
-    // Check if poll is expired
-    if (Date.now() - poll.createdAt > poll.duration) {
-      return await interaction.reply({
-        content: "⏰ This poll has expired.",
-        flags: MessageFlags.Ephemeral,
-      });
-    }
-
-    // Defer update now that we know poll is valid
     await interaction.deferUpdate();
 
     // Get the option index from button ID
     const optionIdx = parseInt(interaction.customId.split("_")[2]);
+    const result = await withPollLock(interaction.message.id, async () => {
+      const pollState = loadPollState();
+      const poll = pollState[interaction.message.id];
 
-    // Remove user's vote from all options
-    poll.votes.forEach((voters, idx) => {
-      const userIndex = voters.indexOf(interaction.user.id);
-      if (userIndex !== -1) {
-        voters.splice(userIndex, 1);
+      if (!poll) {
+        return { error: "❌ Poll not found or expired." };
       }
+
+      if (Date.now() - poll.createdAt > poll.duration) {
+        return { error: "⏰ This poll has expired." };
+      }
+
+      if (!Number.isInteger(optionIdx) || !poll.votes[optionIdx]) {
+        return { error: "❌ Invalid poll option." };
+      }
+
+      // Remove user's vote from all options
+      poll.votes.forEach((voters) => {
+        const userIndex = voters.indexOf(interaction.user.id);
+        if (userIndex !== -1) {
+          voters.splice(userIndex, 1);
+        }
+      });
+
+      // Add user's vote to the selected option
+      poll.votes[optionIdx].push(interaction.user.id);
+
+      await savePollState(pollState);
+
+      // Update the embed with new vote counts while the poll lock is held.
+      const embed = await createPollEmbedWithVoters(poll.title, poll.options, poll.votes, interaction.guild, getDurationText(poll.durationChoice));
+      const buttons = createPollButtons(poll.options.length);
+
+      await interaction.message.edit({
+        embeds: [embed],
+        components: [buttons],
+      });
+
+      return { option: poll.options[optionIdx] };
     });
 
-    // Add user's vote to the selected option
-    poll.votes[optionIdx].push(interaction.user.id);
-
-    // Save updated state
-    savePollState(pollState);
-
-    // Update the embed with new vote counts (async with voter names)
-    const embed = await createPollEmbedWithVoters(poll.title, poll.options, poll.votes, interaction.guild, getDurationText(poll.durationChoice));
-    const buttons = createPollButtons(poll.options.length);
-
-    await interaction.message.edit({
-      embeds: [embed],
-      components: [buttons],
-    });
+    if (result.error) {
+      return await interaction.followUp({
+        content: result.error,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
 
     // Notify user (using followUp since we deferred)
     await interaction.followUp({
-      content: `✅ Your vote for **${poll.options[optionIdx]}** has been registered!`,
+      content: `✅ Your vote for **${result.option}** has been registered!`,
       flags: MessageFlags.Ephemeral,
     });
   } catch (error) {
@@ -401,56 +421,58 @@ function schedulePollClosure(client, messageId, pollDuration = DEFAULT_POLL_DURA
 }
 
 async function closePoll(client, messageId) {
-  try {
-    const pollState = loadPollState();
-    const poll = pollState[messageId];
+  return withPollLock(messageId, async () => {
+    try {
+      const pollState = loadPollState();
+      const poll = pollState[messageId];
 
-    if (!poll) {
-      console.log(`[Poll] No poll found for messageId ${messageId}`);
-      return;
+      if (!poll) {
+        console.log(`[Poll] No poll found for messageId ${messageId}`);
+        return;
+      }
+
+      console.log(`[Poll] Closing poll "${poll.title}" with votes:`, JSON.stringify(poll.votes));
+
+      // Fetch the message
+      const channel = await client.channels.fetch(poll.channelId);
+      const message = await channel.messages.fetch(messageId);
+
+      if (!message) {
+        console.log(`[Poll] Message ${messageId} not found`);
+        return;
+      }
+
+      // Fetch guild for voter names
+      const guild = await client.guilds.fetch(poll.guildId);
+      console.log(`[Poll] Guild fetched: ${guild.name}`);
+
+      // Create final embed WITH voter names preserved
+      const embed = await createPollEmbedWithVoters(poll.title, poll.options, poll.votes, guild, getDurationText(poll.durationChoice));
+
+      // Format close time in French locale
+      const closeTime = new Date().toLocaleString("fr-FR", {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      embed.setFooter({ text: `⏰ Poll has closed • Aujourd'hui à ${closeTime.split(" ").slice(-1)[0]}` });
+
+      // Remove buttons
+      await message.edit({
+        embeds: [embed],
+        components: [],
+      });
+
+      // Remove from state
+      delete pollState[messageId];
+      await savePollState(pollState);
+
+      console.log(`✅ Poll ${messageId} closed with voter names preserved.`);
+    } catch (error) {
+      console.error("Error closing poll:", error);
     }
-
-    console.log(`[Poll] Closing poll "${poll.title}" with votes:`, JSON.stringify(poll.votes));
-
-    // Fetch the message
-    const channel = await client.channels.fetch(poll.channelId);
-    const message = await channel.messages.fetch(messageId);
-
-    if (!message) {
-      console.log(`[Poll] Message ${messageId} not found`);
-      return;
-    }
-
-    // Fetch guild for voter names
-    const guild = await client.guilds.fetch(poll.guildId);
-    console.log(`[Poll] Guild fetched: ${guild.name}`);
-
-    // Create final embed WITH voter names preserved
-    const embed = await createPollEmbedWithVoters(poll.title, poll.options, poll.votes, guild, getDurationText(poll.durationChoice));
-    
-    // Format close time in French locale
-    const closeTime = new Date().toLocaleString("fr-FR", {
-      day: "numeric",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    embed.setFooter({ text: `⏰ Poll has closed • Aujourd'hui à ${closeTime.split(" ").slice(-1)[0]}` });
-
-    // Remove buttons
-    await message.edit({
-      embeds: [embed],
-      components: [],
-    });
-
-    // Remove from state
-    delete pollState[messageId];
-    savePollState(pollState);
-
-    console.log(`✅ Poll ${messageId} closed with voter names preserved.`);
-  } catch (error) {
-    console.error("Error closing poll:", error);
-  }
+  });
 }
 
 // ============================================================================

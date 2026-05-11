@@ -14,8 +14,7 @@ function loadStore() {
       store = JSON.parse(raw || "{}");
     } else {
       store = {};
-      // Initial write can be sync as it's only done once at startup
-      fs.writeFileSync(STATE_PATH, JSON.stringify(store, null, 2));
+      saveStore();
     }
   } catch (err) {
     console.warn("⚠️ Could not load violation state:", err.message);

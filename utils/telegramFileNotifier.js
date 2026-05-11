@@ -1,7 +1,9 @@
 const fs = require("fs");
+const fsPromises = require("fs").promises;
 const path = require("path");
 const crypto = require("crypto");
 const TelegramBot = require("node-telegram-bot-api");
+const { escapeTelegramMarkdown } = require("./moderationUtils");
 
 // The Telegram bot token **must** be provided via the environment.  A
 // hard‑coded fallback value is intentionally omitted here to prevent
@@ -32,6 +34,10 @@ const WATCH_FILES = [
   path.join(PROJECT_ROOT, "package.json"),
 ];
 const STATE_FILE = path.join(__dirname, "..", "data", "telegramState.json"); // Persistent storage
+const FILE_CHANGE_DEBOUNCE_MS = Number(process.env.TELEGRAM_FILE_DEBOUNCE_MS || 1000);
+const STARTUP_IGNORE_PERIOD_MS = Number(process.env.TELEGRAM_STARTUP_IGNORE_MS || 3000);
+const TELEGRAM_MAX_FILE_BYTES = Number(process.env.TELEGRAM_MAX_FILE_BYTES || 50 * 1024 * 1024);
+const TELEGRAM_DOCUMENT_THRESHOLD_BYTES = Number(process.env.TELEGRAM_DOCUMENT_THRESHOLD_BYTES || 20 * 1024 * 1024);
 
 const IGNORE_PATTERNS = [
   /node_modules/,
@@ -136,7 +142,7 @@ function loadState() {
 }
 
 // Save persistent state to file
-function saveState() {
+async function saveState() {
   try {
     const nowIso = new Date().toISOString();
     const data = {
@@ -144,7 +150,7 @@ function saveState() {
       fileHashes: Object.fromEntries(fileHashes),
       lastUpdated: nowIso
     };
-    fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
+    await fsPromises.writeFile(STATE_FILE, JSON.stringify(data, null, 2), "utf8");
     stateLastUpdatedMs = Date.parse(nowIso);
   } catch (err) {
     console.warn("⚠️ Could not save telegram state:", err.message);
@@ -223,7 +229,7 @@ _You will be notified when files are modified._
     this.sendCustomMessage(startupMessage);
 
     // Ignore file changes for 3 seconds after startup (Node.js loads all files)
-    const startupIgnorePeriod = 3000;
+    const startupIgnorePeriod = STARTUP_IGNORE_PERIOD_MS;
     const startupTime = Date.now();
 
     WATCH_DIRS.forEach((dir) => {
@@ -256,7 +262,7 @@ _You will be notified when files are modified._
             const timer = setTimeout(() => {
               this.handleFileChange(fullPath, eventType);
               debounceTimers.delete(key);
-            }, 1000);
+            }, FILE_CHANGE_DEBOUNCE_MS);
 
             debounceTimers.set(key, timer);
           }
@@ -283,7 +289,7 @@ _You will be notified when files are modified._
           const timer = setTimeout(() => {
             this.handleFileChange(filePath, eventType);
             debounceTimers.delete(key);
-          }, 1000);
+          }, FILE_CHANGE_DEBOUNCE_MS);
 
           debounceTimers.set(key, timer);
         });
@@ -408,7 +414,7 @@ _You will be notified when files are modified._
 
         if (!stateLastUpdatedMs || createdMs > stateLastUpdatedMs) {
           fileHashes.set(stateKey, contentHash);
-          saveState();
+          await saveState();
           return;
         }
 
@@ -416,7 +422,7 @@ _You will be notified when files are modified._
         // since our last saved state (e.g. newly-added watch targets).
         if (eventType === "offline-scan" && stat.mtimeMs <= stateLastUpdatedMs) {
           fileHashes.set(stateKey, contentHash);
-          saveState();
+          await saveState();
           return;
         }
 
@@ -430,7 +436,7 @@ _You will be notified when files are modified._
       
 
       // Telegram file size limit: 50MB
-      if (fileSize > 50 * 1024 * 1024) {
+      if (fileSize > TELEGRAM_MAX_FILE_BYTES) {
         console.warn(`⚠️ File too large to send: ${fileName}`);
         return;
       }
@@ -445,7 +451,7 @@ _You will be notified when files are modified._
       });
 
       // Send file with message above it (text first, then file immediately)
-      if (fileSize < 20 * 1024 * 1024) {
+      if (fileSize < TELEGRAM_DOCUMENT_THRESHOLD_BYTES) {
         // 20MB threshold for file attachment
         try {
           // Delete old messages if they exist
@@ -461,7 +467,8 @@ _You will be notified when files are modified._
           }
 
           // Send info message first
-          const message = `?? *File modified*\n\n?? *Path:* \`${relativeDir || 'root'}/${fileName}\`\n?? *Size:* ${fileSizeKB} KB\n? *Time:* ${timestamp}`;
+          const safePath = escapeTelegramMarkdown(`${relativeDir || "root"}/${fileName}`);
+          const message = `?? *File modified*\n\n?? *Path:* \`${safePath}\`\n?? *Size:* ${fileSizeKB} KB\n? *Time:* ${timestamp}`;
           const textMsg = await this.bot.sendMessage(CHAT_ID, message, { parse_mode: "Markdown" });
           
           // Then send file without caption (will appear right below)
@@ -476,21 +483,26 @@ _You will be notified when files are modified._
           fileHashes.set(stateKey, contentHash);
           
           // Save state to persist across restarts
-          saveState();
+          await saveState();
           
           console.log(`✅ File sent to Telegram: ${fileName} (${fileSize} bytes)`);
         } catch (fileErr) {
           console.error(`❌ Failed to send file ${fileName}:`, fileErr.message);
-          await this.bot.sendMessage(CHAT_ID, `?? *Send error*\n\nFile: \`${fileName}\`\nError: ${fileErr.message}`, { parse_mode: "Markdown" });
+          await this.bot.sendMessage(
+            CHAT_ID,
+            `?? *Send error*\n\nFile: \`${escapeTelegramMarkdown(fileName)}\`\nError: ${escapeTelegramMarkdown(fileErr.message)}`,
+            { parse_mode: "Markdown" },
+          );
         }
       } else {
         // File too large, send info only
-        const message = `?? *File modified* ?? *(Too large)*\n\n?? \`${relativeDir || 'root'}/${fileName}\`\n?? ${fileSizeKB} KB\n? ${timestamp}`;
+        const safePath = escapeTelegramMarkdown(`${relativeDir || "root"}/${fileName}`);
+        const message = `?? *File modified* ?? *(Too large)*\n\n?? \`${safePath}\`\n?? ${fileSizeKB} KB\n? ${timestamp}`;
         
         await this.bot.sendMessage(CHAT_ID, message, { parse_mode: "Markdown" });
 
         fileHashes.set(stateKey, contentHash);
-        saveState();
+        await saveState();
         console.log(`⏭️ File ${fileName} info sent (too large to attach)`);
       }
     } catch (err) {

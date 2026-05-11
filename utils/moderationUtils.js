@@ -25,11 +25,14 @@ function stripDiacritics(str) {
  * @returns {string} Normalized string
  */
 function normalizeSymbols(str) {
-  return str
+  return stripDiacritics(str || "")
     .replace(/[\u00A0]/g, " ") // non-breaking space
     .replace(ZERO_WIDTH_REGEX, "")
+    .replace(/@/g, "a")
+    .replace(/\$/g, "s")
+    .replace(/(?<=[a-z0-9])[!|](?=[a-z0-9])/gi, "i")
     .replace(/\*/g, "") // remove stars (for p**n -> pn)
-    .replace(/[\-_. ,/\\+~=`'"()\[\]{}<>^%$#@!?;:|]/g, " ")
+    .replace(/[\-_. ,/\\+~=`'"()\[\]{}<>^%#!?;:|]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -42,7 +45,7 @@ function normalizeSymbols(str) {
 function normalizeLeetspeak(str) {
   return str
     .replace(/0/g, "o")
-    .replace(/[1l!|]/g, "i")
+    .replace(/[1!|]/g, "i")
     .replace(/[3?]/g, "e")
     .replace(/4|@/g, "a")
     .replace(/5|\$/g, "s")
@@ -59,7 +62,11 @@ function normalizeLeetspeak(str) {
  * @returns {string} Compressed string
  */
 function compressRepeats(str, maxRepeats = 2) {
-  return str.replace(/(.)\1{2,}/g, (_, ch) => ch.repeat(maxRepeats));
+  return (str || "").replace(/(.)\1+/g, (match, ch) => {
+    if (match.length === 2) return ch;
+    if (match.length >= 5) return ch.repeat(Math.max(maxRepeats, 3));
+    return ch.repeat(maxRepeats);
+  });
 }
 
 /**
@@ -73,7 +80,7 @@ function normalizeContentForSpam(text) {
   const noDiacritics = stripDiacritics(lowered);
   const noSymbols = normalizeSymbols(noDiacritics);
   const leetFixed = normalizeLeetspeak(noSymbols);
-  return leetFixed.trim();
+  return compressRepeats(leetFixed).trim();
 }
 
 /**
@@ -83,7 +90,7 @@ function normalizeContentForSpam(text) {
  * @returns {string} Normalized text
  */
 function normalizeContentForBadwords(text) {
-  const lowered = text.toLowerCase();
+  const lowered = (text || "").toLowerCase();
   const withoutDiacritics = stripDiacritics(lowered);
   const withoutSymbols = normalizeSymbols(withoutDiacritics);
   return withoutSymbols;
@@ -115,28 +122,33 @@ function buildTelegramMessage(parts) {
     content = "",
   } = parts;
 
-  // Build metadata (fixed parts)
-  let metadata = `${prefix}\n👤 ${author.slice(0, 50)} (${authorId})\n#️⃣ #${channel.slice(0, 50)}`;
+  const safeAuthor = escapeTelegramMarkdown(author.slice(0, 50));
+  const safeAuthorId = escapeTelegramMarkdown(authorId);
+  const safeChannel = escapeTelegramMarkdown(channel.slice(0, 50));
+  const safePrefix = escapeTelegramMarkdown(prefix);
+
+  let metadata = `${safePrefix}\n👤 ${safeAuthor} (${safeAuthorId})\n#️⃣ #${safeChannel}`;
 
   if (words) {
-    metadata += `\n🔴 Words: ${words.slice(0, 150)}`;
+    metadata += `\n🔴 Words: ${escapeTelegramMarkdown(words.slice(0, 150))}`;
   }
   if (violations) {
-    metadata += `\n⚠️ ${violations.slice(0, 200)}`;
+    metadata += `\n⚠️ ${escapeTelegramMarkdown(violations.slice(0, 200))}`;
   }
   if (action) {
-    metadata += `\n📝 Action: ${action.slice(0, 100)}`;
+    metadata += `\n📝 Action: ${escapeTelegramMarkdown(action.slice(0, 100))}`;
   }
 
   metadata += "\n📄 ";
 
   // Calculate remaining space for content
+  const safeContent = escapeTelegramMarkdown(content);
   const remainingSpace = TELEGRAM_MAX_LENGTH - metadata.length - 10; // 10 char safety
 
   // Truncate content to fit
   const truncatedContent =
     remainingSpace > 50
-      ? content.slice(0, remainingSpace) + (content.length > remainingSpace ? "…" : "")
+      ? safeContent.slice(0, remainingSpace) + (safeContent.length > remainingSpace ? "…" : "")
       : "(message too long)";
 
   return metadata + (truncatedContent || "(empty)");
@@ -148,7 +160,7 @@ function buildTelegramMessage(parts) {
  * @returns {string} Escaped text
  */
 function escapeTelegramMarkdown(text) {
-  return (text || "").replace(/([_*\[\]()`])/g, "\\$1");
+  return String(text || "").replace(/([_*\[\]()`~>#+=|{}.!-])/g, "\\$1");
 }
 
 module.exports = {

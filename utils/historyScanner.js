@@ -6,6 +6,8 @@ const { MODERATION_LOG_CHANNEL_ID, MOD_ROLE_NAME, FILTER_EXEMPT_CHANNEL_IDS } = 
 const { containsBadWord, findBadWords } = require("../handlers/badwords");
 const { detectSpamViolations } = require("../handlers/spam");
 const { hasBypassRole } = require("../utils/bypass");
+const { sendDmWithRateLimit } = require("./dmRateLimiter");
+const { sleep } = require("./discordUtils");
 
 const scanStateFile = path.join(__dirname, "../data/scanState.json");
 
@@ -91,7 +93,7 @@ async function sendViolationDM(user, violations) {
       )
       .setTimestamp();
 
-    await user.send({ embeds: [embed] }).catch(() => {});
+    await sendDmWithRateLimit(user, { embeds: [embed] });
   } catch (err) {
     console.error(`Failed to send DM to ${user.tag}:`, err.message);
   }
@@ -194,7 +196,7 @@ async function sendMemberScanReport(guild, user, violations) {
       .setFooter({ text: "Automated Moderation System • History Scan Report" })
       .setTimestamp();
 
-    await user.send({ embeds: [report] }).catch(() => {});
+    await sendDmWithRateLimit(user, { embeds: [report] });
   } catch (err) {
     console.error(`Failed to send report to ${user.tag}:`, err.message);
   }
@@ -316,13 +318,13 @@ async function scanChannel(channel, options = {}) {
       lastMessageId = messages.last()?.id;
       if (!lastMessageId || reachedLastScanned) break fetchLoop;
 
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await sleep(1000);
     }
 
     // Send individual reports to members with violations
     for (const [memberId, data] of memberViolations.entries()) {
       await sendMemberScanReport(guild, data.author, data.violations);
-      await new Promise((resolve) => setTimeout(resolve, 500)); // Rate limit DMs
+      await sleep(1000);
     }
 
     const newestMessageId = (await channel.messages.fetch({ limit: 1 })).first()?.id;

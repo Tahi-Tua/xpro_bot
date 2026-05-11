@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { Events, EmbedBuilder } = require("discord.js");
-const { MODERATION_LOG_CHANNEL_ID, MOD_ROLE_NAME, GENERAL_CHAT_ID, BUG_REPORTS_CHANNEL_ID, FILTER_EXEMPT_CHANNEL_IDS, FILTER_ENFORCED_CATEGORY_IDS } = require("../config/channels");
+const { MODERATION_LOG_CHANNEL_ID, MOD_ROLE_NAME, BUG_REPORTS_CHANNEL_ID, FILTER_EXEMPT_CHANNEL_IDS, FILTER_ENFORCED_CATEGORY_IDS } = require("../config/channels");
 const { hasBypassRole } = require("../utils/bypass");
 const { sendToTelegram } = require("../utils/telegram");
 const { increment: incViolations, getCount: getViolationCount, hasReachedThreshold } = require("../utils/violationStore");

@@ -8,7 +8,9 @@ const {
   compressRepeats,
   normalizeContentForSpam,
   normalizeContentForBadwords,
+  buildTelegramMessage,
   escapeTelegramMarkdown,
+  TELEGRAM_MAX_LENGTH,
 } = require("../utils/moderationUtils");
 
 test("stripDiacritics: removes accents", () => {
@@ -56,6 +58,22 @@ test("escapeTelegramMarkdown: escapes special chars", () => {
   assert.ok(escaped.includes("\\*"));
   assert.ok(escaped.includes("\\_"));
   assert.ok(escaped.includes("\\`"));
+});
+
+test("buildTelegramMessage: escapes user content and stays below Telegram limit", () => {
+  const message = buildTelegramMessage({
+    prefix: "Spam *detected*",
+    author: "user_name",
+    authorId: "123456789012345678",
+    channel: "general(chat)",
+    violations: "link_spam",
+    action: "Warning",
+    content: "*".repeat(5000),
+  });
+
+  assert.ok(message.length <= TELEGRAM_MAX_LENGTH);
+  assert.ok(message.includes("\\*detected\\*"));
+  assert.ok(message.includes("user\\_name"));
 });
 
 test("escapeTelegramMarkdown: handles empty and null", () => {

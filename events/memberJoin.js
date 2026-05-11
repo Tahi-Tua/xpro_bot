@@ -9,8 +9,6 @@ const UNVERIFIED_ROLE_NAME = "Unverified";
 module.exports = (client) => {
   client.on("guildMemberAdd", async (member) => {
     if (member.user.bot) return;
-    const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
-    if (!channel) return;
 
     // Add Unverified role to new members
     const unverifiedRole = member.guild.roles.cache.find(
@@ -42,8 +40,15 @@ module.exports = (client) => {
       }
     }
 
-    const payload = getWelcomePayload(member);
-    await channel.send(payload).catch(() => {});
+    const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
+    if (channel?.isTextBased?.()) {
+      const payload = getWelcomePayload(member);
+      await channel.send(payload).catch((err) => {
+        console.error("❌ Cannot send welcome message:", err.message);
+      });
+    } else {
+      console.warn(`⚠️ Welcome channel not found or not text-based: ${WELCOME_CHANNEL_ID}`);
+    }
 
     // Send notification to Telegram
     if (typeof sendToTelegram === 'function') {

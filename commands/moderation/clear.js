@@ -54,7 +54,13 @@ module.exports = {
     .addSubcommand((sub) =>
       sub
         .setName("all")
-        .setDescription("Delete ALL messages in this channel (use with care)."),
+        .setDescription("Delete ALL messages in this channel (use with care).")
+        .addStringOption((option) =>
+          option
+            .setName("confirm")
+            .setDescription('Type "DELETE ALL" to confirm the full purge.')
+            .setRequired(true),
+        ),
     ),
 
   async execute(interaction) {
@@ -78,7 +84,29 @@ module.exports = {
     }
 
     if (sub === "all") {
+      const hasFullPurgePermission =
+        interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
+        interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels);
+
+      if (!hasFullPurgePermission) {
+        return interaction.reply({
+          content: "❌ Full-channel purge requires Administrator or Manage Channels permission.",
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      const confirmation = interaction.options.getString("confirm");
+      if (confirmation !== "DELETE ALL") {
+        return interaction.reply({
+          content: '❌ Full-channel purge cancelled. Type exactly `DELETE ALL` in the confirm option.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
       await interaction.reply({ content: "🧹 Starting full-channel purge…", flags: MessageFlags.Ephemeral });
+      console.warn(
+        `[clear all] ${interaction.user.tag} (${interaction.user.id}) started full purge in #${interaction.channel?.name} (${interaction.channelId})`,
+      );
       const count = await purgeAllMessages(interaction.channel);
       return interaction.followUp({ content: `✅ Purge complete. Deleted ~**${count}** messages.` });
     }
