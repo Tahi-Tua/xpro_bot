@@ -127,6 +127,13 @@ function withSurveyLock(messageId, task) {
   return next;
 }
 
+async function respondToSurveyCommand(interaction, payload) {
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply(payload);
+  }
+  return interaction.reply(payload);
+}
+
 // ============================================================================
 // Survey creation
 // ============================================================================
@@ -143,7 +150,7 @@ async function createSurvey(interaction, question, durationChoice = "24h", anony
   try {
     // ── Validate results channel ──────────────────────────────────────
     if (!SURVEY_RESULTS_CHANNEL_ID) {
-      return interaction.reply({
+      return respondToSurveyCommand(interaction, {
         content: "❌ **Survey results channel is not configured.**\nSet `SURVEY_RESULTS_CHANNEL_ID` in your `.env` or in `config/channels.js`.",
         flags: MessageFlags.Ephemeral,
       });
@@ -151,7 +158,7 @@ async function createSurvey(interaction, question, durationChoice = "24h", anony
 
     const resultsChannel = await interaction.client.channels.fetch(SURVEY_RESULTS_CHANNEL_ID).catch(() => null);
     if (!resultsChannel) {
-      return interaction.reply({
+      return respondToSurveyCommand(interaction, {
         content: "❌ **Cannot find the survey results channel.** Verify the ID in config.",
         flags: MessageFlags.Ephemeral,
       });
@@ -242,19 +249,17 @@ async function createSurvey(interaction, question, durationChoice = "24h", anony
     );
 
     // ── Confirm to the creator ────────────────────────────────────────
-    await interaction.reply({
+    await respondToSurveyCommand(interaction, {
       content: `✅ Survey created! ⏱️ Closes in **${durationText}**\n[Jump to survey](${message.url})`,
       flags: MessageFlags.Ephemeral,
     });
   } catch (error) {
     console.error("[Survey] Error creating survey:", error);
     try {
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({
-          content: "❌ An error occurred while creating the survey.",
-          flags: MessageFlags.Ephemeral,
-        });
-      }
+      await respondToSurveyCommand(interaction, {
+        content: "❌ An error occurred while creating the survey.",
+        flags: MessageFlags.Ephemeral,
+      });
     } catch (e) {
       console.error("[Survey] Failed to send error reply:", e);
     }

@@ -11,6 +11,15 @@ const SURVEY_ALLOWED_ROLE_IDS = [
   "1380194646155726940", // Moderators
 ];
 
+function isSupportedImageAttachment(attachment) {
+  const contentType = attachment.contentType?.split(";")[0]?.toLowerCase();
+  if (contentType) {
+    return ["image/png", "image/jpeg", "image/gif", "image/webp"].includes(contentType);
+  }
+
+  return /\.(png|jpe?g|gif|webp)$/i.test(attachment.name || attachment.url || "");
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("survey")
@@ -61,14 +70,11 @@ module.exports = {
     const imageAttachment = interaction.options.getAttachment("image") || null;
 
     // ── Validate image format if provided ────────────────────────────
-    if (imageAttachment) {
-      const validTypes = ["image/png", "image/jpeg", "image/gif", "image/webp"];
-      if (!validTypes.includes(imageAttachment.contentType?.split(";")[0])) {
-        return interaction.reply({
-          content: "❌ Invalid file type. Please attach an image (PNG, JPG, GIF, or WEBP).",
-          flags: MessageFlags.Ephemeral,
-        });
-      }
+    if (imageAttachment && !isSupportedImageAttachment(imageAttachment)) {
+      return interaction.reply({
+        content: "❌ Invalid file type. Please attach an image (PNG, JPG, GIF, or WEBP).",
+        flags: MessageFlags.Ephemeral,
+      });
     }
 
     // ── Validate duration format ─────────────────────────────────────
@@ -80,6 +86,8 @@ module.exports = {
         flags: MessageFlags.Ephemeral,
       });
     }
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     // ── Create the survey ────────────────────────────────────────────
     await createSurvey(interaction, question, durationChoice, anonymous, imageAttachment);
