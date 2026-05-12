@@ -87,6 +87,29 @@ function createAcceptButton() {
   );
 }
 
+function hasAcceptRulesButton(message) {
+  return message.components?.some((row) =>
+    row.components?.some((component) => component.customId === "accept_rules"),
+  );
+}
+
+function findExistingRulesMessage(messages) {
+  return messages.find((message) =>
+    message.author?.bot &&
+    (
+      hasAcceptRulesButton(message) ||
+      message.embeds?.some((embed) => embed.title === RULES_TITLE)
+    ),
+  ) || null;
+}
+
+function findExistingRulesBanner(messages) {
+  return messages.find((message) =>
+    message.author?.bot &&
+    message.attachments?.some((attachment) => attachment.name === RULES_BANNER_FILENAME),
+  ) || null;
+}
+
 module.exports = (client) => {
   client.rulesMessagePosted = false;
 
@@ -108,42 +131,25 @@ module.exports = (client) => {
 
       const state = loadState();
       const currentHash = rulesHash();
+      const existingMsgByState = state.messageId ? messages.get(state.messageId) : null;
+      const existingMsg = existingMsgByState || findExistingRulesMessage(messages);
+      const existingBannerByState = state.bannerMsgId ? messages.get(state.bannerMsgId) : null;
+      const existingBanner = existingBannerByState || findExistingRulesBanner(messages);
 
-      // If hash is identical, skip (even if message was deleted)
-      if (state.hash === currentHash) {
-        const existingMsg = state.messageId ? messages.get(state.messageId) : null;
-        if (!existingMsg) {
-          console.log("ℹ️ Rules: message not found but hash unchanged, skipping re-post");
-        } else {
-          console.log("✅ Rules: no changes, keeping existing message.");
-        }
+      if (existingMsg && state.hash === currentHash) {
+        state.messageId = existingMsg.id;
+        state.bannerMsgId = existingBanner?.id || state.bannerMsgId || null;
+        await saveState(state);
+        console.log("✅ Rules: no changes, keeping existing message.");
         client.rulesMessagePosted = true;
         return;
       }
 
-      // Hash changed or new → delete old messages and post new ones
-      if (state.bannerMsgId) {
-        const oldBanner = messages.get(state.bannerMsgId);
-        if (oldBanner) {
-          await oldBanner.delete().catch(() => {});
-          console.log("🗑️ Rules: deleted old banner");
-        }
-      }
-      if (state.messageId) {
-        const oldMsg = messages.get(state.messageId);
-        if (oldMsg) {
-          await oldMsg.delete().catch(() => {});
-          console.log("🗑️ Rules: deleted old message");
-        }
-      }
-
-      // Build message components
       const embed = createRulesEmbed();
       const row = createAcceptButton();
 
-      // Send banner image FIRST (so it appears above the rules)
-      let bannerMsgId = null;
-      if (fs.existsSync(bannerPath)) {
+      let bannerMsgId = existingBanner?.id || null;
+      if (!bannerMsgId && fs.existsSync(bannerPath)) {
         const attachment = new AttachmentBuilder(bannerPath, { name: RULES_BANNER_FILENAME });
         const bannerMsg = await channel.send({ files: [attachment] });
         bannerMsgId = bannerMsg.id;
@@ -152,19 +158,16 @@ module.exports = (client) => {
         console.log("⚠️ Rules banner not found at:", bannerPath);
       }
 
-      // Then send the embed with rules
-      const newMsg = await channel.send({
-        embeds: [embed],
-        components: [row],
-      });
+      const newMsg = existingMsg
+        ? await existingMsg.edit({ embeds: [embed], components: [row] })
+        : await channel.send({ embeds: [embed], components: [row] });
 
-      // Save new state
       state.hash = currentHash;
       state.messageId = newMsg.id;
       state.bannerMsgId = bannerMsgId;
       await saveState(state);
 
-      console.log("📜 Rules message posted successfully!");
+      console.log(`📜 Rules message ${existingMsg ? "synced" : "posted"} successfully!`);
       client.rulesMessagePosted = true;
     } catch (err) {
       console.error("❌ Error in Rules handler:", err.message);

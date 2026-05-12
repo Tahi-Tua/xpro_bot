@@ -14,5 +14,5 @@ module.exports = {
 
 5. Team Support: Arnie isn't just an assassin; his Team Recovery restores health and armor to nearby allies.
 
-6. Rely on high vision teammates: Sticking near heroes like Levi or Raven allows you to dive in after they have weakened the enemy,
+6. Rely on high vision teammates: Sticking near heroes like Levi or Raven allows you to dive in after they have weakened the enemy,`,
 };

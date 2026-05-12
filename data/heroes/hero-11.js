@@ -14,5 +14,5 @@ module.exports = {
 
 5.Leverage "Hunting Instincts": Use your passive to track enemies with less than 50% health to secure kills and hunt down weakened targets, allowing for a more aggressive playstyle.
 
-6.Gear Build Strategy: Focus on gears that enhance firing rate and movement speed rather than just raw damage to keep up with the fast-paced, hit-and-run play style,
+6.Gear Build Strategy: Focus on gears that enhance firing rate and movement speed rather than just raw damage to keep up with the fast-paced, hit-and-run play style,`,
 };

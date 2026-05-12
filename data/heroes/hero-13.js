@@ -16,5 +16,5 @@ module.exports = {
 
 6. Full Personal Set: Use the full Twinkle set for maximum effectiveness, focusing on weapon coils to enhance fire rate and firing range.
 
-7. Maximize her passives: twinkle takes explosive attacks well (she's from the P.Y.R.O faction),attempt to make use of this by blasting yourself (only when you've got enough health) to gain enough speed for a full on aggressive attack,
+7. Maximize her passives: twinkle takes explosive attacks well (she's from the P.Y.R.O faction),attempt to make use of this by blasting yourself (only when you've got enough health) to gain enough speed for a full on aggressive attack,`,
 };

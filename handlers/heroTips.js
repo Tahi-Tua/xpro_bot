@@ -11,6 +11,12 @@ let heroSaveQueue = Promise.resolve();
 
 function loadHeroes() {
   delete require.cache[require.resolve("../data/heroes")];
+  const heroesDir = path.join(__dirname, "../data/heroes");
+  for (const key of Object.keys(require.cache)) {
+    if (key.startsWith(heroesDir) && key.endsWith(".js")) {
+      delete require.cache[key];
+    }
+  }
   return require("../data/heroes");
 }
 
@@ -46,6 +52,33 @@ function heroHash(hero) {
   return JSON.stringify({ name: hero.name, image: hero.image, tips: hero.tips });
 }
 
+function isValidEmbedImageUrl(url) {
+  return /^https?:\/\//i.test(String(url || ""));
+}
+
+function buildHeroEmbed(hero) {
+  const embed = new EmbedBuilder()
+    .setColor(0x9b59b6)
+    .setTitle(`🦸 ${hero.name}`)
+    .setDescription(hero.tips);
+
+  if (isValidEmbedImageUrl(hero.image)) {
+    embed.setImage(hero.image);
+  } else if (hero.image) {
+    console.warn(`⚠️ Hero-Tips: skipped invalid image URL for ${hero.name}`);
+  }
+
+  return embed;
+}
+
+function findExistingHeroMessage(messages, hero) {
+  const expectedTitle = `🦸 ${hero.name}`;
+  return messages.find((message) =>
+    message.author?.bot &&
+    message.embeds?.some((embed) => embed.title === expectedTitle),
+  ) || null;
+}
+
 module.exports = (client) => {
   client.heroTipsPosted = false;
 
@@ -72,36 +105,17 @@ module.exports = (client) => {
       for (const hero of heroes) {
         const currentHash = heroHash(hero);
         const savedData = state[hero.id];
+        const existingMsgByState = savedData?.messageId ? messages.get(savedData.messageId) : null;
+        const existingMsg = existingMsgByState || findExistingHeroMessage(messages, hero);
 
-        // Si le hash est identique, on ne fait rien (même si le message a été supprimé)
-        // Cela évite de re-poster les mêmes tips à chaque redémarrage
-        if (savedData && savedData.hash === currentHash) {
-          // Vérifier si le message existe toujours pour la cohérence du state
-          const existingMsg = savedData.messageId ? messages.get(savedData.messageId) : null;
-          if (!existingMsg) {
-            console.log(`ℹ️ Hero-Tips: ${hero.name} - message not found but hash unchanged, skipping re-post`);
-          }
+        if (existingMsg && savedData?.hash === currentHash && savedData?.messageId === existingMsg.id) {
           continue;
         }
 
-        // Le hash a changé OU c'est un nouveau héros → mettre à jour
-        
-        // Supprimer l'ancien message s'il existe
-        if (savedData && savedData.messageId) {
-          const oldMsg = messages.get(savedData.messageId);
-          if (oldMsg) {
-            await oldMsg.delete().catch(() => {});
-            console.log(`🗑️ Hero-Tips: deleted old message for ${hero.name}`);
-          }
-        }
-
-        const embed = new EmbedBuilder()
-          .setColor(0x9b59b6)
-          .setTitle(`🦸 ${hero.name}`)
-          .setDescription(hero.tips)
-          .setImage(hero.image);
-
-        const newMsg = await channel.send({ embeds: [embed] });
+        const embed = buildHeroEmbed(hero);
+        const newMsg = existingMsg
+          ? await existingMsg.edit({ embeds: [embed] })
+          : await channel.send({ embeds: [embed] });
 
         state[hero.id] = {
           hash: currentHash,
@@ -109,7 +123,7 @@ module.exports = (client) => {
         };
 
         updated = true;
-        console.log(`📘 Hero-Tips updated: ${hero.name}`);
+        console.log(`📘 Hero-Tips ${existingMsg ? "synced" : "posted"}: ${hero.name}`);
       }
 
       const heroIds = heroes.map((h) => h.id);

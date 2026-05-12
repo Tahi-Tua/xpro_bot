@@ -17,5 +17,5 @@ module.exports = {
 
 6.Peek firing: Occasionally attempt to attack enemies while peeking from wall corners, directly engaging enemies can be avoided using this method increasing possibility of survival even in tight conditions
 
-7.Team revival: cover yourself with a turret when attempting to revive a teammate,if zenith drone is used for revival instead, attempt cover the drone with a turret so enemy attacks don't destroy the drone
+7.Team revival: cover yourself with a turret when attempting to revive a teammate,if zenith drone is used for revival instead, attempt cover the drone with a turret so enemy attacks don't destroy the drone`,
 };
