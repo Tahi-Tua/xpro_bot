@@ -1,5 +1,5 @@
 module.exports = {
-  id: "heroMirage",
+  id: "hero9",
   name: "💜・Mirage・幻影",
   image: "https://tse4.mm.bing.net/th/id/OIP.TVVk0VbPVPTI8xD3NjxORwHaLQ?cb=defcache2defcache=1&rs=1&pid=ImgDetMain&o=7&rm=3",
   tips: `Tips to Master Mirage
