@@ -1,5 +1,5 @@
 module.exports = {
-  id: "heroBlot",
+  id: "hero7",
   name: "🔴・Blot・水滴",
   image:
     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSdJSiDoX637Itmf74H8bcEra7mANDcHdESNlwTGcvuBQ&s=10",
