@@ -3,6 +3,7 @@ module.exports = {
   name: "💜・twinkle・幻影",
   image: "https://th.bing.com/th/id/OIP.kSeZQ6uafx1vyhLG4tqzGAHaEK?w=308&h=180&c=7&r=0&o=7&pid=1.7&rm=3",
   tips: `Tips to Maste Twinkle'
+  
 1. Embrace the Overheat: Twinkle's weapon increases damage as it overheats, and her fire spread increases while burning. Use her "Fireproof" talent to gain stat bonuses while burning.
 
 2. Aggressive Mobility: As a scout with low health, you must stay mobile. Use her speed to dive in, burst down enemies, and reposition.
