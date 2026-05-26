@@ -10,6 +10,7 @@ module.exports = (client) => {
     if (hasBypassRole(message.member)) return;
 
     const me = message.guild.members.me;
+
     const canDelete = me
       ?.permissionsIn(message.channel)
       .has(PermissionsBitField.Flags.ManageMessages);
@@ -21,38 +22,100 @@ module.exports = (client) => {
       return;
     }
 
+    // =========================================================
+    // Attachments
+    // =========================================================
+
     const hasVideo =
       message.attachments.size > 0 &&
       message.attachments.some((a) => isVideoAttachment(a));
-    // allowGif: false = les GIFs ne sont PAS considérés comme images (donc autorisés)
+
+    // allowGif: false
+    // => Les GIFs ne sont PAS considérés comme images
     const hasImage =
       message.attachments.size > 0 &&
-      message.attachments.some((a) => isImageAttachment(a, { allowGif: false }));
+      message.attachments.some((a) =>
+        isImageAttachment(a, { allowGif: false }),
+      );
+
+    // =========================================================
+    // Embeds
+    // =========================================================
+
     const hasMediaEmbed =
       message.embeds.length > 0 &&
       message.embeds.some((e) => {
         const type = (e.type || "").toLowerCase();
-        // Autoriser les GIFs (type 'gifv' de Tenor/Giphy)
-        if (type === "gifv") return false;
+
+        const urls = [
+          e.url,
+          e.image?.url,
+          e.thumbnail?.url,
+          e.video?.url,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        // =====================================================
+        // Autoriser les GIFs :
+        // - Tenor
+        // - Giphy
+        // - Discord GIF embeds
+        // - Mobile Discord embeds
+        // =====================================================
+
+        const isGifEmbed =
+          type === "gifv" ||
+          urls.includes("tenor.com") ||
+          urls.includes("giphy.com") ||
+          urls.includes(".gif");
+
+        if (isGifEmbed) {
+          return false;
+        }
+
+        // =====================================================
+        // Bloquer les autres médias
+        // =====================================================
+
         return (
           type === "image" ||
           type === "video" ||
-          e.image ||
-          e.thumbnail ||
-          e.video
+          Boolean(e.image) ||
+          Boolean(e.thumbnail) ||
+          Boolean(e.video)
         );
       });
 
-    if (!hasVideo && !hasImage && !hasMediaEmbed) return;
+    // =========================================================
+    // Aucun média interdit
+    // =========================================================
+
+    if (!hasVideo && !hasImage && !hasMediaEmbed) {
+      return;
+    }
+
+    // =========================================================
+    // Delete message
+    // =========================================================
 
     const deleted = await message
       .delete()
       .then(() => true)
       .catch((err) => {
-        console.log("Delete failed in general-chat:", err?.message || err);
+        console.log(
+          "Delete failed in general-chat:",
+          err?.message || err,
+        );
         return false;
       });
+
     if (!deleted) return;
+
+    // =========================================================
+    // DM warning
+    // =========================================================
 
     message.author
       .send(
