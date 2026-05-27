@@ -11,14 +11,11 @@ const {
 
 const pollStateFile = path.join(__dirname, "../data/pollState.json");
 
-// Queue to serialize async writes and prevent race conditions
 let pollSaveQueue = Promise.resolve();
 const pollLocks = new Map();
 
-// Default poll expiration: 24 hours in milliseconds
 const DEFAULT_POLL_DURATION = 24 * 60 * 60 * 1000;
 
-// Duration presets (fallback)
 const DURATION_PRESETS = {
   "1h": 1 * 60 * 60 * 1000,
   "6h": 6 * 60 * 60 * 1000,
@@ -26,18 +23,16 @@ const DURATION_PRESETS = {
   "7d": 7 * 24 * 60 * 60 * 1000,
 };
 
-// Parse custom duration format: "10h25", "1h15m", "30m", "2h", etc.
 function parseDuration(durationChoice) {
   if (!durationChoice) return DEFAULT_POLL_DURATION;
 
-  // Try preset first
   if (DURATION_PRESETS[durationChoice]) {
     return DURATION_PRESETS[durationChoice];
   }
 
-  // Parse custom format: "XhYm" or "Xh" or "Ym"
-  const regex = /^(\d+)h?(?:(\d+)m?)?$/i;
-  const match = durationChoice.toLowerCase().match(/(\d+)\s*h(?:\s*(\d+)\s*m)?|(\d+)\s*m/i);
+  const match = durationChoice
+    .toLowerCase()
+    .match(/(\d+)\s*h(?:\s*(\d+)\s*m)?|(\d+)\s*m/i);
 
   if (!match) {
     console.warn(`Invalid duration format: ${durationChoice}, using default 24h`);
@@ -46,25 +41,23 @@ function parseDuration(durationChoice) {
 
   let ms = 0;
 
-  // Format: "10h25" or "10h 25m"
   if (durationChoice.toLowerCase().includes("h")) {
     const hourMatch = durationChoice.match(/(\d+)\s*h/i);
     if (hourMatch) {
-      ms += parseInt(hourMatch[1]) * 60 * 60 * 1000;
+      ms += parseInt(hourMatch[1], 10) * 60 * 60 * 1000;
     }
 
     const minMatch = durationChoice.match(/(\d+)\s*m/i);
     if (minMatch) {
-      ms += parseInt(minMatch[1]) * 60 * 1000;
+      ms += parseInt(minMatch[1], 10) * 60 * 1000;
     }
   } else if (durationChoice.toLowerCase().includes("m")) {
     const minMatch = durationChoice.match(/(\d+)\s*m/i);
     if (minMatch) {
-      ms += parseInt(minMatch[1]) * 60 * 1000;
+      ms += parseInt(minMatch[1], 10) * 60 * 1000;
     }
   }
 
-  // Validate (max 30 days, min 1 minute)
   const MAX_DURATION = 30 * 24 * 60 * 60 * 1000;
   const MIN_DURATION = 60 * 1000;
 
@@ -72,6 +65,7 @@ function parseDuration(durationChoice) {
     console.warn(`Duration too long (${durationChoice}), capped at 30 days`);
     return MAX_DURATION;
   }
+
   if (ms < MIN_DURATION) {
     console.warn(`Duration too short (${durationChoice}), set to 1 minute`);
     return MIN_DURATION;
@@ -80,12 +74,7 @@ function parseDuration(durationChoice) {
   return ms || DEFAULT_POLL_DURATION;
 }
 
-// Button IDs for options
 const BUTTON_IDS = ["poll_opt_0", "poll_opt_1", "poll_opt_2", "poll_opt_3"];
-
-// ============================================================================
-// State management
-// ============================================================================
 
 function loadPollState() {
   try {
@@ -96,15 +85,16 @@ function loadPollState() {
   }
 }
 
-/**
- * Save poll state to disk asynchronously.
- * Uses a queue to serialize writes and prevent race conditions.
- */
 function savePollState(state) {
   pollSaveQueue = pollSaveQueue
     .then(async () => {
       try {
-        await fsPromises.writeFile(pollStateFile, JSON.stringify(state, null, 2), "utf8");
+        await fsPromises.mkdir(path.dirname(pollStateFile), { recursive: true });
+        await fsPromises.writeFile(
+          pollStateFile,
+          JSON.stringify(state, null, 2),
+          "utf8",
+        );
       } catch (err) {
         console.warn("⚠️ Could not save poll state:", err.message);
       }
@@ -112,71 +102,75 @@ function savePollState(state) {
     .catch((err) => {
       console.warn("⚠️ Unexpected error in poll save queue:", err.message);
     });
+
   return pollSaveQueue;
 }
 
 function withPollLock(messageId, task) {
   const previous = pollLocks.get(messageId) || Promise.resolve();
   const next = previous.catch(() => {}).then(task);
-  const tracked = next.finally(() => {
-    if (pollLocks.get(messageId) === tracked) {
-      pollLocks.delete(messageId);
-    }
-  }).catch(() => {});
+
+  const tracked = next
+    .finally(() => {
+      if (pollLocks.get(messageId) === tracked) {
+        pollLocks.delete(messageId);
+      }
+    })
+    .catch(() => {});
 
   pollLocks.set(messageId, tracked);
 
   return next;
 }
 
-// ============================================================================
-// Create and send poll
-// ============================================================================
-
 async function createPoll(interaction, title, options, durationChoice = "24h") {
   try {
-    // Parse the duration
     const pollDuration = parseDuration(durationChoice);
     const durationText = getDurationText(durationChoice);
+    const createdAt = Date.now();
+    const expiresAt = createdAt + pollDuration;
 
-    // Create basic embed (no voters yet since no one has voted)
-    const embed = createPollEmbed(title, options, options.map(() => []), durationText);
+    const embed = createPollEmbed(
+      title,
+      options,
+      options.map(() => []),
+      durationText,
+    );
 
-    // Create buttons (only vote buttons)
     const buttons = createPollButtons(options.length);
 
-    // Send the poll message FIRST (no defer needed)
     const message = await interaction.channel.send({
       embeds: [embed],
       components: [buttons],
     });
 
-    // Store poll state
     const pollState = loadPollState();
+
     pollState[message.id] = {
       messageId: message.id,
       channelId: interaction.channel.id,
       guildId: interaction.guild.id,
       title,
       options,
-      votes: options.map(() => []), // Array of user IDs per option
-      createdAt: Date.now(),
+      votes: options.map(() => []),
+      createdAt,
+      expiresAt,
       createdBy: interaction.user.id,
       duration: pollDuration,
       durationChoice,
     };
+
     await savePollState(pollState);
 
-    // Schedule poll closure
     schedulePollClosure(interaction.client, message.id, pollDuration);
 
-    // Reply to the interaction (ephemeral confirmation)
     await interaction.reply({
       content: `✅ Poll created! ⏱️ Closes in ${durationText}\n[Jump to poll](${message.url})`,
       flags: MessageFlags.Ephemeral,
     });
   } catch (error) {
     console.error("Error creating poll:", error);
+
     try {
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
@@ -190,7 +184,6 @@ async function createPoll(interaction, title, options, durationChoice = "24h") {
   }
 }
 
-// Helper to get human-readable duration text
 function getDurationText(durationChoice) {
   if (!durationChoice) return "24 hours";
 
@@ -203,18 +196,17 @@ function getDurationText(durationChoice) {
 
   if (texts[durationChoice]) return texts[durationChoice];
 
-  // Return the custom format as-is (e.g., "10h25" → "10h25")
   return durationChoice.toLowerCase();
 }
 
-// ============================================================================
-// Embed builder
-// ============================================================================
+function getPollExpiresAt(poll) {
+  return poll.expiresAt || poll.createdAt + poll.duration;
+}
 
 function createPollEmbed(title, options, votes, durationText = "24 hours") {
   const totalVotes = options.reduce(
     (sum, _, idx) => sum + (votes[idx] || []).length,
-    0
+    0,
   );
 
   const fields = options.map((option, idx) => {
@@ -235,15 +227,22 @@ function createPollEmbed(title, options, votes, durationText = "24 hours") {
     .setDescription(`Total votes: **${totalVotes}**`)
     .addFields(...fields)
     .setColor("#5865F2")
-    .setFooter({ text: `Click the buttons below to vote • Closes in ${durationText}` })
+    .setFooter({
+      text: `Click the buttons below to vote • Closes in ${durationText}`,
+    })
     .setTimestamp();
 }
 
-// Async version with voter names
-async function createPollEmbedWithVoters(title, options, votes, guild, durationText = "24 hours") {
+async function createPollEmbedWithVoters(
+  title,
+  options,
+  votes,
+  guild,
+  durationText = "24 hours",
+) {
   const totalVotes = options.reduce(
     (sum, _, idx) => sum + (votes[idx] || []).length,
-    0
+    0,
   );
 
   const fields = [];
@@ -256,6 +255,7 @@ async function createPollEmbedWithVoters(title, options, votes, guild, durationT
     const bar = createProgressBar(percentage);
 
     let voterList = "";
+
     if (voteCount > 0 && votes[idx] && votes[idx].length > 0) {
       const voterIds = votes[idx];
       const voterNames = [];
@@ -263,10 +263,10 @@ async function createPollEmbedWithVoters(title, options, votes, guild, durationT
       for (const userId of voterIds) {
         try {
           const member = await guild.members.fetch(userId).catch(() => null);
+
           if (member) {
             voterNames.push(member.displayName || member.user.username);
           } else {
-            // Try to get user directly from client
             const user = await guild.client.users.fetch(userId).catch(() => null);
             voterNames.push(user ? user.username : `User ${userId.slice(-4)}`);
           }
@@ -293,19 +293,17 @@ async function createPollEmbedWithVoters(title, options, votes, guild, durationT
     .setDescription(`Total votes: **${totalVotes}**`)
     .addFields(...fields)
     .setColor("#5865F2")
-    .setFooter({ text: `Click the buttons below to vote • Closes in ${durationText}` })
+    .setFooter({
+      text: `Click the buttons below to vote • Closes in ${durationText}`,
+    })
     .setTimestamp();
 }
 
 function createProgressBar(percentage) {
-  const filled = Math.round(percentage / 10); // 10 segments
+  const filled = Math.round(percentage / 10);
   const empty = 10 - filled;
   return "█".repeat(filled) + "░".repeat(empty);
 }
-
-// ============================================================================
-// Button builder
-// ============================================================================
 
 function createPollButtons(optionCount) {
   const buttons = [];
@@ -317,16 +315,12 @@ function createPollButtons(optionCount) {
         .setCustomId(BUTTON_IDS[i])
         .setLabel(`Vote ${i + 1}`)
         .setEmoji(emojis[i])
-        .setStyle(ButtonStyle.Primary)
+        .setStyle(ButtonStyle.Primary),
     );
   }
 
   return new ActionRowBuilder().addComponents(buttons);
 }
-
-// ============================================================================
-// Handle vote button clicks
-// ============================================================================
 
 async function handlePollVote(interaction) {
   if (!interaction.isButton()) return;
@@ -335,17 +329,22 @@ async function handlePollVote(interaction) {
   try {
     await interaction.deferUpdate();
 
-    // Get the option index from button ID
-    const optionIdx = parseInt(interaction.customId.split("_")[2]);
+    const optionIdx = parseInt(interaction.customId.split("_")[2], 10);
+
     const result = await withPollLock(interaction.message.id, async () => {
       const pollState = loadPollState();
       const poll = pollState[interaction.message.id];
 
       if (!poll) {
-        return { error: "❌ Poll not found or expired." };
+        return {
+          error:
+            "❌ Poll not found or expired. The bot may have restarted without persistent storage.",
+        };
       }
 
-      if (Date.now() - poll.createdAt > poll.duration) {
+      const expiresAt = getPollExpiresAt(poll);
+
+      if (Date.now() >= expiresAt) {
         return { error: "⏰ This poll has expired." };
       }
 
@@ -353,21 +352,30 @@ async function handlePollVote(interaction) {
         return { error: "❌ Invalid poll option." };
       }
 
-      // Remove user's vote from all options
       poll.votes.forEach((voters) => {
         const userIndex = voters.indexOf(interaction.user.id);
+
         if (userIndex !== -1) {
           voters.splice(userIndex, 1);
         }
       });
 
-      // Add user's vote to the selected option
       poll.votes[optionIdx].push(interaction.user.id);
+
+      if (!poll.expiresAt) {
+        poll.expiresAt = poll.createdAt + poll.duration;
+      }
 
       await savePollState(pollState);
 
-      // Update the embed with new vote counts while the poll lock is held.
-      const embed = await createPollEmbedWithVoters(poll.title, poll.options, poll.votes, interaction.guild, getDurationText(poll.durationChoice));
+      const embed = await createPollEmbedWithVoters(
+        poll.title,
+        poll.options,
+        poll.votes,
+        interaction.guild,
+        getDurationText(poll.durationChoice),
+      );
+
       const buttons = createPollButtons(poll.options.length);
 
       await interaction.message.edit({
@@ -385,13 +393,13 @@ async function handlePollVote(interaction) {
       });
     }
 
-    // Notify user (using followUp since we deferred)
     await interaction.followUp({
       content: `✅ Your vote for **${result.option}** has been registered!`,
       flags: MessageFlags.Ephemeral,
     });
   } catch (error) {
     console.error("Error handling poll vote:", error);
+
     try {
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
@@ -410,10 +418,6 @@ async function handlePollVote(interaction) {
   }
 }
 
-// ============================================================================
-// Auto-close polls
-// ============================================================================
-
 function schedulePollClosure(client, messageId, pollDuration = DEFAULT_POLL_DURATION) {
   setTimeout(() => {
     closePoll(client, messageId);
@@ -431,9 +435,11 @@ async function closePoll(client, messageId) {
         return;
       }
 
-      console.log(`[Poll] Closing poll "${poll.title}" with votes:`, JSON.stringify(poll.votes));
+      console.log(
+        `[Poll] Closing poll "${poll.title}" with votes:`,
+        JSON.stringify(poll.votes),
+      );
 
-      // Fetch the message
       const channel = await client.channels.fetch(poll.channelId);
       const message = await channel.messages.fetch(messageId);
 
@@ -442,29 +448,32 @@ async function closePoll(client, messageId) {
         return;
       }
 
-      // Fetch guild for voter names
       const guild = await client.guilds.fetch(poll.guildId);
-      console.log(`[Poll] Guild fetched: ${guild.name}`);
 
-      // Create final embed WITH voter names preserved
-      const embed = await createPollEmbedWithVoters(poll.title, poll.options, poll.votes, guild, getDurationText(poll.durationChoice));
+      const embed = await createPollEmbedWithVoters(
+        poll.title,
+        poll.options,
+        poll.votes,
+        guild,
+        getDurationText(poll.durationChoice),
+      );
 
-      // Format close time in French locale
       const closeTime = new Date().toLocaleString("fr-FR", {
         day: "numeric",
         month: "short",
         hour: "2-digit",
         minute: "2-digit",
       });
-      embed.setFooter({ text: `⏰ Poll has closed • Aujourd'hui à ${closeTime.split(" ").slice(-1)[0]}` });
 
-      // Remove buttons
+      embed.setFooter({
+        text: `⏰ Poll has closed • ${closeTime}`,
+      });
+
       await message.edit({
         embeds: [embed],
         components: [],
       });
 
-      // Remove from state
       delete pollState[messageId];
       await savePollState(pollState);
 
@@ -475,30 +484,37 @@ async function closePoll(client, messageId) {
   });
 }
 
-// ============================================================================
-// Check and close expired polls on startup
-// ============================================================================
-
 function checkExpiredPolls(client) {
   const pollState = loadPollState();
   const now = Date.now();
 
   Object.entries(pollState).forEach(([messageId, poll]) => {
-    if (now - poll.createdAt > poll.duration) {
-      closePoll(client, messageId);
-    } else {
-      // Reschedule closure for remaining polls
-      const remainingTime = poll.duration - (now - poll.createdAt);
-      setTimeout(() => {
-        closePoll(client, messageId);
-      }, remainingTime);
+    const expiresAt = getPollExpiresAt(poll);
+
+    if (!poll.expiresAt) {
+      poll.expiresAt = expiresAt;
+      savePollState(pollState);
     }
+
+    if (now >= expiresAt) {
+      console.log(`[Poll] Expired poll detected: ${messageId}`);
+      closePoll(client, messageId);
+      return;
+    }
+
+    const remainingTime = expiresAt - now;
+
+    console.log(
+      `[Poll] Rescheduled "${poll.title}" (${messageId}) -> ${Math.round(
+        remainingTime / 1000,
+      )}s remaining`,
+    );
+
+    setTimeout(() => {
+      closePoll(client, messageId);
+    }, remainingTime);
   });
 }
-
-// ============================================================================
-// Exports
-// ============================================================================
 
 module.exports = {
   createPoll,
