@@ -89,9 +89,14 @@ const BUTTON_IDS = ["poll_opt_0", "poll_opt_1", "poll_opt_2", "poll_opt_3"];
 
 function loadPollState() {
   try {
+    if (!fs.existsSync(pollStateFile)) return {};
+
     const data = fs.readFileSync(pollStateFile, "utf8");
+    if (!data.trim()) return {};
+
     return JSON.parse(data);
-  } catch {
+  } catch (err) {
+    console.error("❌ Failed to load poll state:", err.message);
     return {};
   }
 }
@@ -104,7 +109,9 @@ function savePollState(state) {
   pollSaveQueue = pollSaveQueue
     .then(async () => {
       try {
-        await fsPromises.writeFile(pollStateFile, JSON.stringify(state, null, 2), "utf8");
+        const tempFile = `${pollStateFile}.tmp`;
+        await fsPromises.writeFile(tempFile, JSON.stringify(state, null, 2), "utf8");
+        await fsPromises.rename(tempFile, pollStateFile);
       } catch (err) {
         console.warn("⚠️ Could not save poll state:", err.message);
       }
@@ -342,7 +349,7 @@ async function handlePollVote(interaction) {
       const poll = pollState[interaction.message.id];
 
       if (!poll) {
-        return { error: "❌ Poll not found or expired." };
+        return { error: "❌ Poll not found." };
       }
 
       if (Date.now() - poll.createdAt > poll.duration) {
