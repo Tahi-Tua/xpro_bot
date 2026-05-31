@@ -24,7 +24,5 @@ node_modules/
 .env
 *.log
 bot.log
-data/*.sqlite
-data/*.sqlite-*
 #Test results file
 TestResults.xml
