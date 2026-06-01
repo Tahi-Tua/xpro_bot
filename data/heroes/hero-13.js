@@ -1,8 +1,8 @@
 module.exports = {
   id: "hero13",
-  name: "💜・twinkle・幻影",
+  name: "💜・twinkle・",
   image: "https://th.bing.com/th/id/OIP.kSeZQ6uafx1vyhLG4tqzGAHaEK?w=308&h=180&c=7&r=0&o=7&pid=1.7&rm=3",
-  tips: `Tips to Maste Twinkle'
+  tips: `Tips to Master Twinkle'
   
 1. Embrace the Overheat: Twinkle's weapon increases damage as it overheats, and her fire spread increases while burning. Use her "Fireproof" talent to gain stat bonuses while burning.
 
