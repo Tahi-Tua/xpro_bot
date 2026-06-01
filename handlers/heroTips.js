@@ -5,19 +5,23 @@ const fsPromises = require("fs").promises;
 const path = require("path");
 
 const stateFile = path.join(__dirname, "../data/heroState.json");
+const heroSourceDirs = [
+  path.join(__dirname, "../config/heroes"),
+  path.join(__dirname, "../data/heroes"),
+];
 
 // Queue to serialize async writes
 let heroSaveQueue = Promise.resolve();
 
 function loadHeroes() {
-  const heroesDir = path.join(__dirname, "../data/heroes");
-  const heroesIndex = path.join(heroesDir, "index.js");
+  const heroesDir = heroSourceDirs.find((dir) => fs.existsSync(path.join(dir, "index.js")));
 
-  if (!fs.existsSync(heroesIndex)) {
-    console.warn(`⚠️ Hero-Tips: ${heroesIndex} not found. Skipping hero sync.`);
+  if (!heroesDir) {
+    console.warn("⚠️ Hero-Tips: no hero source directory found. Skipping hero sync.");
     return [];
   }
 
+  const heroesIndex = path.join(heroesDir, "index.js");
   delete require.cache[require.resolve(heroesIndex)];
   for (const key of Object.keys(require.cache)) {
     if (key.startsWith(heroesDir) && key.endsWith(".js")) {
@@ -25,6 +29,7 @@ function loadHeroes() {
     }
   }
 
+  console.log(`[Hero-Tips] Loading heroes from ${heroesDir}`);
   return require(heroesIndex);
 }
 
