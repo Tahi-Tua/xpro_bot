@@ -28,9 +28,14 @@ function formatTag(member) {
 }
 
 async function ensureChannel(guild) {
+  if (!ONLINE_CATEGORY_ID) {
+    console.log("[ONLINE] Disabled: ONLINE_CATEGORY_ID is not configured.");
+    return null;
+  }
+
   const category = await guild.channels.fetch(ONLINE_CATEGORY_ID).catch(() => null);
   if (!category || category.type !== ChannelType.GuildCategory) {
-    console.log("? ONLINE: Category not found or invalid:", ONLINE_CATEGORY_ID);
+    console.warn("[ONLINE] Category not found or invalid:", ONLINE_CATEGORY_ID);
     return null;
   }
 
@@ -185,9 +190,14 @@ function scheduleUpdate() {
 }
 
 async function init(client) {
+  if (!ONLINE_CATEGORY_ID) {
+    console.log("[ONLINE] Disabled: ONLINE_CATEGORY_ID is not configured.");
+    return;
+  }
+
   const category = await client.channels.fetch(ONLINE_CATEGORY_ID).catch(() => null);
   if (!category || category.type !== ChannelType.GuildCategory) {
-    console.log("? ONLINE: Category not found or invalid:", ONLINE_CATEGORY_ID);
+    console.warn("[ONLINE] Category not found or invalid:", ONLINE_CATEGORY_ID);
     return;
   }
 

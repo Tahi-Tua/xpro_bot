@@ -78,9 +78,14 @@ const BUTTON_IDS = ["poll_opt_0", "poll_opt_1", "poll_opt_2", "poll_opt_3"];
 
 function loadPollState() {
   try {
+    if (!fs.existsSync(pollStateFile)) return {};
+
     const data = fs.readFileSync(pollStateFile, "utf8");
+    if (!data.trim()) return {};
+
     return JSON.parse(data);
-  } catch {
+  } catch (err) {
+    console.error("❌ Failed to load poll state:", err.message);
     return {};
   }
 }
@@ -90,11 +95,9 @@ function savePollState(state) {
     .then(async () => {
       try {
         await fsPromises.mkdir(path.dirname(pollStateFile), { recursive: true });
-        await fsPromises.writeFile(
-          pollStateFile,
-          JSON.stringify(state, null, 2),
-          "utf8",
-        );
+        const tempFile = `${pollStateFile}.tmp`;
+        await fsPromises.writeFile(tempFile, JSON.stringify(state, null, 2), "utf8");
+        await fsPromises.rename(tempFile, pollStateFile);
       } catch (err) {
         console.warn("⚠️ Could not save poll state:", err.message);
       }
@@ -337,8 +340,7 @@ async function handlePollVote(interaction) {
 
       if (!poll) {
         return {
-          error:
-            "❌ Poll not found or expired. The bot may have restarted without persistent storage.",
+          error: "❌ Poll not found. The bot may have restarted without persistent storage.",
         };
       }
 
@@ -424,6 +426,16 @@ function schedulePollClosure(client, messageId, pollDuration = DEFAULT_POLL_DURA
   }, pollDuration);
 }
 
+function isUnknownDiscordResource(error) {
+  return error?.code === 10003 || error?.code === 10008;
+}
+
+async function deletePollStateEntry(pollState, messageId, reason) {
+  delete pollState[messageId];
+  await savePollState(pollState);
+  console.warn(`[Poll] Removed stale poll ${messageId}: ${reason}`);
+}
+
 async function closePoll(client, messageId) {
   return withPollLock(messageId, async () => {
     try {
@@ -440,11 +452,23 @@ async function closePoll(client, messageId) {
         JSON.stringify(poll.votes),
       );
 
-      const channel = await client.channels.fetch(poll.channelId);
-      const message = await channel.messages.fetch(messageId);
+      const channel = await client.channels.fetch(poll.channelId).catch((error) => {
+        if (isUnknownDiscordResource(error)) return null;
+        throw error;
+      });
+
+      if (!channel?.isTextBased?.()) {
+        await deletePollStateEntry(pollState, messageId, `channel ${poll.channelId} not found`);
+        return;
+      }
+
+      const message = await channel.messages.fetch(messageId).catch((error) => {
+        if (isUnknownDiscordResource(error)) return null;
+        throw error;
+      });
 
       if (!message) {
-        console.log(`[Poll] Message ${messageId} not found`);
+        await deletePollStateEntry(pollState, messageId, "Discord message not found");
         return;
       }
 
@@ -469,10 +493,16 @@ async function closePoll(client, messageId) {
         text: `⏰ Poll has closed • ${closeTime}`,
       });
 
-      await message.edit({
-        embeds: [embed],
-        components: [],
-      });
+      try {
+        await message.edit({
+          embeds: [embed],
+          components: [],
+        });
+      } catch (error) {
+        if (!isUnknownDiscordResource(error)) throw error;
+        await deletePollStateEntry(pollState, messageId, "Discord message disappeared before edit");
+        return;
+      }
 
       delete pollState[messageId];
       await savePollState(pollState);

@@ -10,14 +10,22 @@ const stateFile = path.join(__dirname, "../data/heroState.json");
 let heroSaveQueue = Promise.resolve();
 
 function loadHeroes() {
-  delete require.cache[require.resolve("../data/heroes")];
   const heroesDir = path.join(__dirname, "../data/heroes");
+  const heroesIndex = path.join(heroesDir, "index.js");
+
+  if (!fs.existsSync(heroesIndex)) {
+    console.warn(`⚠️ Hero-Tips: ${heroesIndex} not found. Skipping hero sync.`);
+    return [];
+  }
+
+  delete require.cache[require.resolve(heroesIndex)];
   for (const key of Object.keys(require.cache)) {
     if (key.startsWith(heroesDir) && key.endsWith(".js")) {
       delete require.cache[key];
     }
   }
-  return require("../data/heroes");
+
+  return require(heroesIndex);
 }
 
 function loadState() {
@@ -86,7 +94,7 @@ module.exports = (client) => {
     if (client.heroTipsPosted) return;
 
     try {
-      const channel = client.channels.cache.get(HERO_TIPS_CHANNEL_ID);
+      const channel = await client.channels.fetch(HERO_TIPS_CHANNEL_ID).catch(() => null);
       if (!channel) {
         console.log("❌ Hero-Tips channel not found:", HERO_TIPS_CHANNEL_ID);
         return;
@@ -99,6 +107,11 @@ module.exports = (client) => {
       }
 
       const heroes = loadHeroes();
+      if (!heroes.length) {
+        console.log("⚠️ Hero-Tips: no heroes loaded, skipping sync.");
+        return;
+      }
+
       const state = loadState();
       let updated = false;
 
