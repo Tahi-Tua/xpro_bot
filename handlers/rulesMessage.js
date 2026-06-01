@@ -29,14 +29,17 @@ const {
 const stateFile = path.join(__dirname, "../data/rulesState.json");
 const bannerPath = path.join(__dirname, "../attached_assets", RULES_BANNER_FILENAME);
 
-// Queue to serialize async writes
 let rulesSaveQueue = Promise.resolve();
+let rulesSyncQueue = Promise.resolve();
 
 function loadState() {
   try {
+    if (!fs.existsSync(stateFile)) return {};
     const data = fs.readFileSync(stateFile, "utf8");
+    if (!data.trim()) return {};
     return JSON.parse(data);
-  } catch {
+  } catch (err) {
+    console.warn("⚠️ Could not load rules state:", err.message);
     return {};
   }
 }
@@ -45,7 +48,10 @@ function saveState(state) {
   rulesSaveQueue = rulesSaveQueue
     .then(async () => {
       try {
-        await fsPromises.writeFile(stateFile, JSON.stringify(state, null, 2), "utf8");
+        await fsPromises.mkdir(path.dirname(stateFile), { recursive: true });
+        const tempFile = `${stateFile}.tmp`;
+        await fsPromises.writeFile(tempFile, JSON.stringify(state, null, 2), "utf8");
+        await fsPromises.rename(tempFile, stateFile);
       } catch (err) {
         console.warn("⚠️ Could not save rules state:", err.message);
       }
@@ -57,7 +63,6 @@ function saveState(state) {
 }
 
 function rulesHash() {
-  // Hash based on all configurable content
   return JSON.stringify({
     title: RULES_TITLE,
     description: RULES_DESCRIPTION,
@@ -83,7 +88,7 @@ function createAcceptButton() {
     new ButtonBuilder()
       .setCustomId("accept_rules")
       .setLabel("✅ Accept Rules")
-      .setStyle(ButtonStyle.Success)
+      .setStyle(ButtonStyle.Success),
   );
 }
 
@@ -110,67 +115,82 @@ function findExistingRulesBanner(messages) {
   ) || null;
 }
 
+async function runRulesMessageSync(client, options = {}) {
+  const reason = options.reason || "startup";
+  const channel = await client.channels.fetch(RULES_CHANNEL_ID).catch(() => null);
+  if (!channel?.isTextBased?.()) {
+    console.log("❌ Rules channel not found or invalid:", RULES_CHANNEL_ID);
+    return { updated: false };
+  }
+
+  const messages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+  if (!messages) {
+    console.log("⚠️ Cannot access Rules channel. Please check bot permissions.");
+    return { updated: false };
+  }
+
+  const state = loadState();
+  const currentHash = rulesHash();
+  const existingMsgByState = state.messageId ? messages.get(state.messageId) : null;
+  const existingMsg = existingMsgByState || findExistingRulesMessage(messages);
+  const existingBannerByState = state.bannerMsgId ? messages.get(state.bannerMsgId) : null;
+  const existingBanner = existingBannerByState || findExistingRulesBanner(messages);
+
+  if (existingMsg && state.hash === currentHash) {
+    state.messageId = existingMsg.id;
+    state.bannerMsgId = existingBanner?.id || state.bannerMsgId || null;
+    await saveState(state);
+    console.log(`[Rules] ${reason}: no changes, keeping existing message.`);
+    return { updated: false };
+  }
+
+  const embed = createRulesEmbed();
+  const row = createAcceptButton();
+
+  let bannerMsgId = existingBanner?.id || null;
+  if (!bannerMsgId && fs.existsSync(bannerPath)) {
+    const attachment = new AttachmentBuilder(bannerPath, { name: RULES_BANNER_FILENAME });
+    const bannerMsg = await channel.send({ files: [attachment] });
+    bannerMsgId = bannerMsg.id;
+    console.log("🖼️ Rules banner posted");
+  } else if (!bannerMsgId) {
+    console.log("⚠️ Rules banner not found at:", bannerPath);
+  }
+
+  const newMsg = existingMsg
+    ? await existingMsg.edit({ embeds: [embed], components: [row] })
+    : await channel.send({ embeds: [embed], components: [row] });
+
+  state.hash = currentHash;
+  state.messageId = newMsg.id;
+  state.bannerMsgId = bannerMsgId;
+  await saveState(state);
+
+  console.log(`[Rules] ${reason}: message ${existingMsg ? "updated" : "posted"}.`);
+  return { updated: true };
+}
+
+function syncRulesMessage(client, options = {}) {
+  rulesSyncQueue = rulesSyncQueue
+    .then(() => runRulesMessageSync(client, options))
+    .catch((err) => {
+      console.error("❌ Error in Rules sync:", err.message);
+      return { updated: false, error: err };
+    });
+
+  return rulesSyncQueue;
+}
+
 module.exports = (client) => {
   client.rulesMessagePosted = false;
 
   client.on(Events.ClientReady, async () => {
     if (client.rulesMessagePosted) return;
-
-    try {
-      const channel = client.channels.cache.get(RULES_CHANNEL_ID);
-      if (!channel) {
-        console.log("❌ Rules channel not found:", RULES_CHANNEL_ID);
-        return;
-      }
-
-      const messages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
-      if (!messages) {
-        console.log("⚠️ Cannot access Rules channel. Please check bot permissions.");
-        return;
-      }
-
-      const state = loadState();
-      const currentHash = rulesHash();
-      const existingMsgByState = state.messageId ? messages.get(state.messageId) : null;
-      const existingMsg = existingMsgByState || findExistingRulesMessage(messages);
-      const existingBannerByState = state.bannerMsgId ? messages.get(state.bannerMsgId) : null;
-      const existingBanner = existingBannerByState || findExistingRulesBanner(messages);
-
-      if (existingMsg && state.hash === currentHash) {
-        state.messageId = existingMsg.id;
-        state.bannerMsgId = existingBanner?.id || state.bannerMsgId || null;
-        await saveState(state);
-        console.log("✅ Rules: no changes, keeping existing message.");
-        client.rulesMessagePosted = true;
-        return;
-      }
-
-      const embed = createRulesEmbed();
-      const row = createAcceptButton();
-
-      let bannerMsgId = existingBanner?.id || null;
-      if (!bannerMsgId && fs.existsSync(bannerPath)) {
-        const attachment = new AttachmentBuilder(bannerPath, { name: RULES_BANNER_FILENAME });
-        const bannerMsg = await channel.send({ files: [attachment] });
-        bannerMsgId = bannerMsg.id;
-        console.log("🖼️ Rules banner posted");
-      } else {
-        console.log("⚠️ Rules banner not found at:", bannerPath);
-      }
-
-      const newMsg = existingMsg
-        ? await existingMsg.edit({ embeds: [embed], components: [row] })
-        : await channel.send({ embeds: [embed], components: [row] });
-
-      state.hash = currentHash;
-      state.messageId = newMsg.id;
-      state.bannerMsgId = bannerMsgId;
-      await saveState(state);
-
-      console.log(`📜 Rules message ${existingMsg ? "synced" : "posted"} successfully!`);
-      client.rulesMessagePosted = true;
-    } catch (err) {
-      console.error("❌ Error in Rules handler:", err.message);
-    }
+    await syncRulesMessage(client, { reason: "startup" });
+    client.rulesMessagePosted = true;
   });
 };
+
+module.exports.createRulesEmbed = createRulesEmbed;
+module.exports.rulesHash = rulesHash;
+module.exports.syncRulesMessage = syncRulesMessage;
