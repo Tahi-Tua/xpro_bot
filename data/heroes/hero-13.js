@@ -1,6 +1,6 @@
 module.exports = {
   id: "hero13",
-  name: "💜・twinkle・",
+  name: "💜・twinkle・幻影 ",
   image: "https://th.bing.com/th/id/OIP.kSeZQ6uafx1vyhLG4tqzGAHaEK?w=308&h=180&c=7&r=0&o=7&pid=1.7&rm=3",
   tips: `Tips to Master Twinkle'
   
