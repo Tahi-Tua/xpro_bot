@@ -1,8 +1,5 @@
 const { WELCOME_CHANNEL_ID, GUEST_ROLE_ID } = require("../config/channels");
 const { getWelcomePayload } = require("../handlers/welcome");
-const { sendToTelegram } = require("../utils/telegram");
-
-const escapeTelegramMarkdown = (text) => (text || "").replace(/([_*\[\]()`])/g, "\\$1");
 
 const UNVERIFIED_ROLE_NAME = "Unverified";
 
@@ -48,21 +45,6 @@ module.exports = (client) => {
       });
     } else {
       console.warn(`⚠️ Welcome channel not found or not text-based: ${WELCOME_CHANNEL_ID}`);
-    }
-
-    // Send notification to Telegram
-    if (typeof sendToTelegram === 'function') {
-      const safeName = escapeTelegramMarkdown(member.user.username);
-      const safeGuild = escapeTelegramMarkdown(member.guild.name);
-      const telegramMessage =
-        `? *New Discord member!*\n\n` +
-        `?? *Name:* ${safeName}\n` +
-        `?? *ID:* \`${member.user.id}\`\n` +
-        `?? *Account created:* ${escapeTelegramMarkdown(member.user.createdAt.toLocaleDateString('fr-FR'))}\n` +
-        `?? *Server:* ${safeGuild}\n` +
-        `?? *Total members:* ${member.guild.memberCount}`;
-
-      sendToTelegram(telegramMessage, { parse_mode: 'Markdown' });
     }
   });
 };
