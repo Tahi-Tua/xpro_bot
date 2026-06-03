@@ -1,13 +1,11 @@
 const { Events, PermissionsBitField } = require("discord.js");
 const { GENERAL_CHAT_ID } = require("../config/channels");
-const { hasBypassRole } = require("../utils/bypass");
 const { isImageAttachment, isVideoAttachment } = require("../utils/media");
 
 module.exports = (client) => {
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot || !message.inGuild()) return;
     if (message.channel.id !== GENERAL_CHAT_ID) return;
-    if (hasBypassRole(message.member)) return;
 
     const me = message.guild.members.me;
 
