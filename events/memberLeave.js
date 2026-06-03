@@ -1,29 +1,62 @@
-const { Events, EmbedBuilder, PermissionsBitField } = require("discord.js");
+const { Events, EmbedBuilder, PermissionsBitField, ChannelType } = require("discord.js");
 const { HELLO_CHANNEL_ID, MOD_ROLE_NAME } = require("../config/channels");
 const { sendToTelegram } = require("../utils/telegram");
 
 const escapeTelegramMarkdown = (text) =>
   String(text || "").replace(/([_*\[\]()`])/g, "\\$1");
 
+async function getHelloChannel(guild) {
+  const cachedChannel = guild.channels.cache.get(HELLO_CHANNEL_ID);
+  if (cachedChannel) return cachedChannel;
+
+  try {
+    return await guild.channels.fetch(HELLO_CHANNEL_ID);
+  } catch (err) {
+    console.warn(
+      `[memberLeave] Impossible de fetch HELLO_CHANNEL_ID=${HELLO_CHANNEL_ID}:`,
+      err?.message || err,
+    );
+    return null;
+  }
+}
+
 module.exports = (client) => {
+  console.log(`[memberLeave] Handler chargé | HELLO_CHANNEL_ID=${HELLO_CHANNEL_ID}`);
+
   client.on(Events.GuildMemberRemove, async (member) => {
     try {
-      const helloChannel = member.guild.channels.cache.get(HELLO_CHANNEL_ID);
+      console.log(
+        `[memberLeave] Départ détecté: ${member.user?.tag || member.id} (${member.user?.id || member.id})`,
+      );
+
+      const helloChannel = await getHelloChannel(member.guild);
 
       if (!helloChannel) {
         console.warn(
-          `[memberLeave] HELLO_CHANNEL_ID introuvable ou non chargé: ${HELLO_CHANNEL_ID}`,
+          `[memberLeave] Salon welcome introuvable après cache+fetch: ${HELLO_CHANNEL_ID}`,
         );
         return;
       }
 
-      const me = member.guild.members.me;
-      const canSend = me
-        ?.permissionsIn(helloChannel)
-        .has(PermissionsBitField.Flags.SendMessages);
-      const canEmbed = me
-        ?.permissionsIn(helloChannel)
-        .has(PermissionsBitField.Flags.EmbedLinks);
+      if (helloChannel.type !== ChannelType.GuildText) {
+        console.warn(
+          `[memberLeave] Le salon configuré n'est pas un salon texte: ${helloChannel.id}`,
+        );
+        return;
+      }
+
+      const me = member.guild.members.me || await member.guild.members.fetchMe().catch(() => null);
+      const permissions = me?.permissionsIn(helloChannel);
+      const canSend = permissions?.has(PermissionsBitField.Flags.SendMessages);
+      const canEmbed = permissions?.has(PermissionsBitField.Flags.EmbedLinks);
+      const canView = permissions?.has(PermissionsBitField.Flags.ViewChannel);
+
+      if (!canView) {
+        console.warn(
+          `[memberLeave] Permission ViewChannel manquante dans le salon ${helloChannel.id}`,
+        );
+        return;
+      }
 
       if (!canSend) {
         console.warn(
@@ -76,6 +109,10 @@ module.exports = (client) => {
         content: staffRole ? `${staffRole}` : undefined,
         embeds: [embed],
       });
+
+      console.log(
+        `[memberLeave] Notification envoyée dans ${helloChannel.name} (${helloChannel.id})`,
+      );
 
       if (typeof sendToTelegram === "function") {
         const safeName = escapeTelegramMarkdown(member.user.username);
