@@ -1,9 +1,5 @@
 const { Events, EmbedBuilder, PermissionsBitField, ChannelType } = require("discord.js");
 const { HELLO_CHANNEL_ID, MOD_ROLE_NAME } = require("../config/channels");
-const { sendToTelegram } = require("../utils/telegram");
-
-const escapeTelegramMarkdown = (text) =>
-  String(text || "").replace(/([_*\[\]()`])/g, "\\$1");
 
 async function getHelloChannel(guild) {
   const cachedChannel = guild.channels.cache.get(HELLO_CHANNEL_ID);
@@ -113,22 +109,6 @@ module.exports = (client) => {
       console.log(
         `[memberLeave] Notification envoyée dans ${helloChannel.name} (${helloChannel.id})`,
       );
-
-      if (typeof sendToTelegram === "function") {
-        const safeName = escapeTelegramMarkdown(member.user.username);
-        const safeRoles = escapeTelegramMarkdown(roles);
-        const safeGuild = escapeTelegramMarkdown(member.guild.name);
-        const telegramMessage =
-          `❌ *Member left the Discord!*\n\n` +
-          `👤 *Name:* ${safeName}\n` +
-          `🆔 *ID:* \`${member.user.id}\`\n` +
-          `🕒 *Time on server:* ${timeInServer}\n` +
-          `🎭 *Previous roles:* ${safeRoles}\n` +
-          `🏰 *Server:* ${safeGuild}\n` +
-          `👥 *Members remaining:* ${member.guild.memberCount}`;
-
-        sendToTelegram(telegramMessage, { parse_mode: "Markdown" });
-      }
     } catch (err) {
       console.error("[memberLeave] Erreur notification départ:", err);
     }
