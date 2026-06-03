@@ -51,13 +51,6 @@ const profileStateFile = path.join(__dirname, "data/profileState.json");
 
 const BOT_DISPLAY_NAME = process.env.BOT_DISPLAY_NAME || "𝔵𝔞𝔳𝔦𝔢𝔯 𝑝𝑟𝑜";
 
-const ENABLE_TELEGRAM_FILE_NOTIFIER = (() => {
-  const flag = (process.env.ENABLE_TELEGRAM_FILE_NOTIFIER || "").toLowerCase();
-  if (flag === "true") return true;
-  if (flag === "false") return false;
-  return Boolean(process.env.TG_BOT_TOKEN && process.env.TG_CHAT_ID);
-})();
-
 // ============================================================================
 // State helpers
 // ============================================================================
@@ -240,24 +233,6 @@ if (fs.existsSync(eventsPath)) {
   }
 } else {
   console.warn("⚠️ No 'events' directory found.");
-}
-
-// ============================================================================
-// Telegram File Notifier
-// ============================================================================
-
-if (ENABLE_TELEGRAM_FILE_NOTIFIER) {
-  try {
-    const telegramNotifier = require("./utils/telegramFileNotifier");
-    telegramNotifier.init();
-    console.log("🚀 Telegram File Notifier started");
-  } catch (err) {
-    console.warn("⚠️ Telegram notifier failed to start:", err.message);
-  }
-} else {
-  console.log(
-    "ℹ️ Telegram File Notifier disabled (ENABLE_TELEGRAM_FILE_NOTIFIER=false or missing TG_BOT_TOKEN/TG_CHAT_ID)"
-  );
 }
 
 // ============================================================================
