@@ -8,6 +8,15 @@ const csv = (value, fallback = []) => {
 
 const env = (name, fallback) => process.env[name] || fallback;
 
+const BYPASS_ROLE_IDS = csv(process.env.BYPASS_ROLE_IDS, [
+  "1380247716596023317", // @leaders XPRO
+  "1380243547642400849", // @vice-leaders XPRO
+  "1380194646155726940", // @Moderators
+]);
+
+const LEADER_ROLE_ID = env("LEADER_ROLE_ID", "1380247716596023317");
+const STAFF_ROLE_ID = env("STAFF_ROLE_ID", "1447642963189694647");
+
 module.exports = {
   RULES_CHANNEL_ID: env("RULES_CHANNEL_ID", "1381588865235812373"),
   WELCOME_CHANNEL_ID: env("WELCOME_CHANNEL_ID", "1381589122455703644"),
@@ -61,9 +70,18 @@ module.exports = {
   // will use the ID to grant the role on acceptance.
   MEMBER_ROLE_ID: process.env.MEMBER_ROLE_ID || null,
 
+  // Role that triggers strict syndicate cleanup when a member leaves.
+  SYNDICATE_MEMBER_ROLE_ID: process.env.SYNDICATE_MEMBER_ROLE_ID || null,
+  SYNDICATE_MEMBER_ROLE_NAME: env("SYNDICATE_MEMBER_ROLE_NAME", "Syndicate member 🎮"),
+  SYNDICATE_CLEANUP_PROTECTED_ROLE_IDS: csv(process.env.SYNDICATE_CLEANUP_PROTECTED_ROLE_IDS, [
+    LEADER_ROLE_ID,
+    STAFF_ROLE_ID,
+    ...BYPASS_ROLE_IDS,
+  ]),
+
   // Role IDs for ticket management (Leaders and Staff)
-  LEADER_ROLE_ID: env("LEADER_ROLE_ID", "1380247716596023317"),  // ҲƤƦƠ ԼЄƛƊЄƦ 🌟
-  STAFF_ROLE_ID: env("STAFF_ROLE_ID", "1447642963189694647"),   // Xpro Pro Staff
+  LEADER_ROLE_ID,  // ҲƤƦƠ ԼЄƛƊЄƦ 🌟
+  STAFF_ROLE_ID,   // Xpro Pro Staff
   MOD_ROLE_NAME: env("MOD_ROLE_NAME", "Xpro Pro Staff"),
   PENDING_ROLE_ID: env("PENDING_ROLE_ID", "1447512419705425952"),
   GUEST_ROLE_ID: env("GUEST_ROLE_ID", "1381603842856321096"), // Role automatically assigned to accepted new members
@@ -77,11 +95,7 @@ module.exports = {
   READ_ONLY_THRESHOLD: Number(process.env.READ_ONLY_THRESHOLD || 20),
 
   // Role IDs that bypass spam/badwords filters (staff/moderation roles)
-  BYPASS_ROLE_IDS: csv(process.env.BYPASS_ROLE_IDS, [
-    "1380247716596023317", // @leaders XPRO
-    "1380243547642400849", // @vice-leaders XPRO
-    "1380194646155726940", // @Moderators
-  ]),
+  BYPASS_ROLE_IDS,
 
   // IDs allowed to use @everyone/@here without triggering spam
   ALLOWED_GLOBAL_MENTION_IDS: csv(process.env.ALLOWED_GLOBAL_MENTION_IDS, [
