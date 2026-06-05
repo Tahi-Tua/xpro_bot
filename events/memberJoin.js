@@ -1,11 +1,26 @@
 const { WELCOME_CHANNEL_ID, GUEST_ROLE_ID } = require("../config/channels");
 const { getWelcomePayload } = require("../handlers/welcome");
+const { cleanupReturningSyndicateMember } = require("../utils/syndicateRoleCleanup");
 
 const UNVERIFIED_ROLE_NAME = "Unverified";
 
 module.exports = (client) => {
   client.on("guildMemberAdd", async (member) => {
     if (member.user.bot) return;
+
+    try {
+      const cleanupResult = await cleanupReturningSyndicateMember(member);
+      if (cleanupResult.cleaned) {
+        console.log(
+          `🧹 Syndicate cleanup completed for ${member.user.tag}: removed=${cleanupResult.removedCount}, skipped=${cleanupResult.skippedCount}, failed=${cleanupResult.failedCount}`,
+        );
+      }
+    } catch (cleanupErr) {
+      console.error(
+        "❌ Syndicate cleanup failed on member join:",
+        cleanupErr?.message || cleanupErr,
+      );
+    }
 
     // Add Unverified role to new members
     const unverifiedRole = member.guild.roles.cache.find(
