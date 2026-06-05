@@ -13,6 +13,7 @@ const {
 
 const STATE_FILE = path.join(__dirname, "..", "data", "syndicateRoleCleanup.json");
 const ROLE_VALUE_MAX_LENGTH = 1024;
+const CLEANUP_RETRY_DELAY_MS = Number(process.env.SYNDICATE_CLEANUP_RETRY_DELAY_MS || 8000);
 
 let saveQueue = Promise.resolve();
 
@@ -153,12 +154,14 @@ function isProtectedRole(role, guild, botMember) {
   return false;
 }
 
-async function cleanupReturningSyndicateMember(member) {
+async function cleanupReturningSyndicateMember(member, options = {}) {
+  const { preserveRecord = false, pass = "immediate" } = options;
   const state = loadState();
   const record = state.members[member.id];
   if (!record) return { cleaned: false, reason: "not_tracked" };
 
-  const botMember = member.guild.members.me || await member.guild.members.fetchMe().catch(() => null);
+  const freshMember = await member.guild.members.fetch(member.id).catch(() => member);
+  const botMember = freshMember.guild.members.me || await freshMember.guild.members.fetchMe().catch(() => null);
   const permissions = botMember?.permissions;
   const canManageRoles = permissions?.has(PermissionsBitField.Flags.ManageRoles);
 
@@ -170,24 +173,24 @@ async function cleanupReturningSyndicateMember(member) {
     skipped.push({ name: "all_roles", id: "n/a", reason: "missing_manage_roles" });
   } else {
     for (const savedRole of record.roles || []) {
-      const role = member.guild.roles.cache.get(savedRole.id) || await member.guild.roles.fetch(savedRole.id).catch(() => null);
+      const role = freshMember.guild.roles.cache.get(savedRole.id) || await freshMember.guild.roles.fetch(savedRole.id).catch(() => null);
       if (!role) {
         skipped.push({ ...savedRole, reason: "role_deleted_or_missing" });
         continue;
       }
 
-      if (!member.roles.cache.has(role.id)) {
+      if (!freshMember.roles.cache.has(role.id)) {
         skipped.push({ ...savedRole, reason: "not_present_on_member" });
         continue;
       }
 
-      if (isProtectedRole(role, member.guild, botMember)) {
+      if (isProtectedRole(role, freshMember.guild, botMember)) {
         skipped.push({ ...savedRole, reason: "protected_or_unmanageable" });
         continue;
       }
 
       try {
-        await member.roles.remove(role, "Syndicate cleanup: returning member had left the server");
+        await freshMember.roles.remove(role, `Syndicate cleanup ${pass}`);
         removed.push({ id: role.id, name: role.name });
       } catch (err) {
         failed.push({ id: role.id, name: role.name, reason: err?.message || String(err) });
@@ -195,22 +198,24 @@ async function cleanupReturningSyndicateMember(member) {
     }
   }
 
-  delete state.members[member.id];
-  await saveState(state);
+  if (!preserveRecord) {
+    delete state.members[freshMember.id];
+    await saveState(state);
+  }
 
   const embed = new EmbedBuilder()
     .setColor(failed.length ? 0xffa500 : 0x35c759)
     .setTitle("🧹 Syndicate member cleanup executed")
-    .setDescription("A previously departed syndicate member rejoined. Saved roles were processed for cleanup.")
+    .setDescription(`Saved roles were processed for cleanup. Pass: ${pass}`)
     .addFields(
-      { name: "Member", value: `${member.user.tag} (${member.id})`, inline: false },
+      { name: "Member", value: `${freshMember.user.tag} (${freshMember.id})`, inline: false },
       { name: "Removed roles", value: chunkRoleNames(removed), inline: false },
       { name: "Skipped roles", value: chunkRoleNames(skipped.map((role) => ({ ...role, name: `${role.name} — ${role.reason}` }))), inline: false },
       { name: "Failed roles", value: chunkRoleNames(failed.map((role) => ({ ...role, name: `${role.name} — ${role.reason}` }))), inline: false },
     )
     .setTimestamp();
 
-  await sendCleanupLog(member.guild, embed);
+  await sendCleanupLog(freshMember.guild, embed);
 
   return {
     cleaned: true,
@@ -220,10 +225,30 @@ async function cleanupReturningSyndicateMember(member) {
   };
 }
 
+function scheduleReturningSyndicateCleanup(member) {
+  const state = loadState();
+  const record = state.members[member.id];
+  if (!record) return false;
+
+  setTimeout(async () => {
+    try {
+      await cleanupReturningSyndicateMember(member, {
+        preserveRecord: false,
+        pass: "delayed",
+      });
+    } catch (err) {
+      console.error("[syndicateCleanup] Delayed cleanup failed:", err?.message || err);
+    }
+  }, CLEANUP_RETRY_DELAY_MS).unref?.();
+
+  return true;
+}
+
 module.exports = {
   cleanupReturningSyndicateMember,
   loadState,
   markSyndicateMemberDeparture,
   memberHasSyndicateRole,
   resolveSyndicateRole,
+  scheduleReturningSyndicateCleanup,
 };
