@@ -1,5 +1,6 @@
 const { Events, EmbedBuilder, PermissionsBitField, ChannelType } = require("discord.js");
 const { HELLO_CHANNEL_ID, MOD_ROLE_NAME } = require("../config/channels");
+const { markSyndicateMemberDeparture } = require("../utils/syndicateRoleCleanup");
 
 async function getHelloChannel(guild) {
   const cachedChannel = guild.channels.cache.get(HELLO_CHANNEL_ID);
@@ -24,6 +25,20 @@ module.exports = (client) => {
       console.log(
         `[memberLeave] Départ détecté: ${member.user?.tag || member.id} (${member.user?.id || member.id})`,
       );
+
+      try {
+        const cleanupResult = await markSyndicateMemberDeparture(member);
+        if (cleanupResult.tracked) {
+          console.log(
+            `[memberLeave] Syndicate cleanup armed for ${member.user?.tag || member.id} (${cleanupResult.rolesCount} role snapshot entries)`,
+          );
+        }
+      } catch (cleanupErr) {
+        console.error(
+          "[memberLeave] Erreur sauvegarde syndicate cleanup:",
+          cleanupErr?.message || cleanupErr,
+        );
+      }
 
       const helloChannel = await getHelloChannel(member.guild);
 
