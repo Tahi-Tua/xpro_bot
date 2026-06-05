@@ -1,6 +1,9 @@
 const { WELCOME_CHANNEL_ID, GUEST_ROLE_ID } = require("../config/channels");
 const { getWelcomePayload } = require("../handlers/welcome");
-const { cleanupReturningSyndicateMember } = require("../utils/syndicateRoleCleanup");
+const {
+  cleanupReturningSyndicateMember,
+  scheduleReturningSyndicateCleanup,
+} = require("../utils/syndicateRoleCleanup");
 
 const UNVERIFIED_ROLE_NAME = "Unverified";
 
@@ -8,11 +11,18 @@ module.exports = (client) => {
   client.on("guildMemberAdd", async (member) => {
     if (member.user.bot) return;
 
+    let delayedCleanupScheduled = false;
+
     try {
-      const cleanupResult = await cleanupReturningSyndicateMember(member);
+      const cleanupResult = await cleanupReturningSyndicateMember(member, {
+        preserveRecord: true,
+        pass: "immediate",
+      });
+
       if (cleanupResult.cleaned) {
+        delayedCleanupScheduled = scheduleReturningSyndicateCleanup(member);
         console.log(
-          `🧹 Syndicate cleanup completed for ${member.user.tag}: removed=${cleanupResult.removedCount}, skipped=${cleanupResult.skippedCount}, failed=${cleanupResult.failedCount}`,
+          `🧹 Syndicate cleanup immediate pass for ${member.user.tag}: removed=${cleanupResult.removedCount}, skipped=${cleanupResult.skippedCount}, failed=${cleanupResult.failedCount}, delayed=${delayedCleanupScheduled}`,
         );
       }
     } catch (cleanupErr) {
