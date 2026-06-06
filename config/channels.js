@@ -73,6 +73,13 @@ module.exports = {
   // Role that triggers strict syndicate cleanup when a member leaves.
   SYNDICATE_MEMBER_ROLE_ID: process.env.SYNDICATE_MEMBER_ROLE_ID || null,
   SYNDICATE_MEMBER_ROLE_NAME: env("SYNDICATE_MEMBER_ROLE_NAME", "Syndicate member 🎮"),
+  SYNDICATE_CLEANUP_FORCE_USER_IDS: csv(process.env.SYNDICATE_CLEANUP_FORCE_USER_IDS, [
+    "768978119872086047", // sir_genix
+  ]),
+  SYNDICATE_CLEANUP_KEEP_ROLE_NAMES: csv(process.env.SYNDICATE_CLEANUP_KEEP_ROLE_NAMES, [
+    "Unverified",
+    "Guest",
+  ]),
   SYNDICATE_CLEANUP_PROTECTED_ROLE_IDS: csv(process.env.SYNDICATE_CLEANUP_PROTECTED_ROLE_IDS, [
     LEADER_ROLE_ID,
     STAFF_ROLE_ID,
