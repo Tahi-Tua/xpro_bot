@@ -8,12 +8,15 @@ const {
   BOT_LOGS_CHANNEL_ID,
   SYNDICATE_MEMBER_ROLE_ID,
   SYNDICATE_MEMBER_ROLE_NAME,
+  SYNDICATE_CLEANUP_FORCE_USER_IDS,
+  SYNDICATE_CLEANUP_KEEP_ROLE_NAMES,
   SYNDICATE_CLEANUP_PROTECTED_ROLE_IDS,
 } = require("../config/channels");
 
 const STATE_FILE = path.join(__dirname, "..", "data", "syndicateRoleCleanup.json");
 const ROLE_VALUE_MAX_LENGTH = 1024;
 const CLEANUP_RETRY_DELAY_MS = Number(process.env.SYNDICATE_CLEANUP_RETRY_DELAY_MS || 8000);
+const CLEANUP_WATCH_REPEATS = Number(process.env.SYNDICATE_CLEANUP_WATCH_REPEATS || 6);
 
 let saveQueue = Promise.resolve();
 
@@ -59,6 +62,10 @@ function memberHasSyndicateRole(member) {
   const role = resolveSyndicateRole(member.guild);
   if (!role) return false;
   return member.roles.cache.has(role.id);
+}
+
+function isForceCleanupUser(userId) {
+  return SYNDICATE_CLEANUP_FORCE_USER_IDS.includes(userId);
 }
 
 function getStoredRoleSnapshot(member) {
@@ -154,13 +161,44 @@ function isProtectedRole(role, guild, botMember) {
   return false;
 }
 
+function isKeptStartRole(role) {
+  return SYNDICATE_CLEANUP_KEEP_ROLE_NAMES.includes(role.name);
+}
+
+function buildForceCleanupRecord(member) {
+  const roles = member.roles.cache
+    .filter((role) => role.id !== member.guild.id)
+    .filter((role) => !isKeptStartRole(role))
+    .map((role) => ({
+      id: role.id,
+      name: role.name,
+      position: role.position,
+      managed: role.managed,
+    }))
+    .sort((a, b) => b.position - a.position);
+
+  return {
+    userId: member.id,
+    tag: member.user?.tag || member.user?.username || member.id,
+    guildId: member.guild.id,
+    guildName: member.guild.name,
+    leftAt: null,
+    triggerRoleId: "force_cleanup",
+    triggerRoleName: "force_cleanup",
+    roles,
+  };
+}
+
 async function cleanupReturningSyndicateMember(member, options = {}) {
   const { preserveRecord = false, pass = "immediate" } = options;
   const state = loadState();
-  const record = state.members[member.id];
-  if (!record) return { cleaned: false, reason: "not_tracked" };
+  const storedRecord = state.members[member.id];
+  const forced = isForceCleanupUser(member.id);
+
+  if (!storedRecord && !forced) return { cleaned: false, reason: "not_tracked" };
 
   const freshMember = await member.guild.members.fetch(member.id).catch(() => member);
+  const record = storedRecord || buildForceCleanupRecord(freshMember);
   const botMember = freshMember.guild.members.me || await freshMember.guild.members.fetchMe().catch(() => null);
   const permissions = botMember?.permissions;
   const canManageRoles = permissions?.has(PermissionsBitField.Flags.ManageRoles);
@@ -176,6 +214,11 @@ async function cleanupReturningSyndicateMember(member, options = {}) {
       const role = freshMember.guild.roles.cache.get(savedRole.id) || await freshMember.guild.roles.fetch(savedRole.id).catch(() => null);
       if (!role) {
         skipped.push({ ...savedRole, reason: "role_deleted_or_missing" });
+        continue;
+      }
+
+      if (isKeptStartRole(role)) {
+        skipped.push({ ...savedRole, reason: "start_role_kept" });
         continue;
       }
 
@@ -198,7 +241,7 @@ async function cleanupReturningSyndicateMember(member, options = {}) {
     }
   }
 
-  if (!preserveRecord) {
+  if (!preserveRecord && storedRecord) {
     delete state.members[freshMember.id];
     await saveState(state);
   }
@@ -206,7 +249,7 @@ async function cleanupReturningSyndicateMember(member, options = {}) {
   const embed = new EmbedBuilder()
     .setColor(failed.length ? 0xffa500 : 0x35c759)
     .setTitle("🧹 Syndicate member cleanup executed")
-    .setDescription(`Saved roles were processed for cleanup. Pass: ${pass}`)
+    .setDescription(`Saved or forced roles were processed for cleanup. Pass: ${pass}. Forced: ${forced ? "yes" : "no"}`)
     .addFields(
       { name: "Member", value: `${freshMember.user.tag} (${freshMember.id})`, inline: false },
       { name: "Removed roles", value: chunkRoleNames(removed), inline: false },
@@ -219,6 +262,7 @@ async function cleanupReturningSyndicateMember(member, options = {}) {
 
   return {
     cleaned: true,
+    forced,
     removedCount: removed.length,
     skippedCount: skipped.length,
     failedCount: failed.length,
@@ -228,24 +272,28 @@ async function cleanupReturningSyndicateMember(member, options = {}) {
 function scheduleReturningSyndicateCleanup(member) {
   const state = loadState();
   const record = state.members[member.id];
-  if (!record) return false;
+  const forced = isForceCleanupUser(member.id);
+  if (!record && !forced) return false;
 
-  setTimeout(async () => {
-    try {
-      await cleanupReturningSyndicateMember(member, {
-        preserveRecord: false,
-        pass: "delayed",
-      });
-    } catch (err) {
-      console.error("[syndicateCleanup] Delayed cleanup failed:", err?.message || err);
-    }
-  }, CLEANUP_RETRY_DELAY_MS).unref?.();
+  for (let index = 1; index <= CLEANUP_WATCH_REPEATS; index += 1) {
+    setTimeout(async () => {
+      try {
+        await cleanupReturningSyndicateMember(member, {
+          preserveRecord: index < CLEANUP_WATCH_REPEATS,
+          pass: `delayed-${index}`,
+        });
+      } catch (err) {
+        console.error("[syndicateCleanup] Delayed cleanup failed:", err?.message || err);
+      }
+    }, CLEANUP_RETRY_DELAY_MS * index).unref?.();
+  }
 
   return true;
 }
 
 module.exports = {
   cleanupReturningSyndicateMember,
+  isForceCleanupUser,
   loadState,
   markSyndicateMemberDeparture,
   memberHasSyndicateRole,
