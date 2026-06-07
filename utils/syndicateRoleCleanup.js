@@ -19,12 +19,27 @@ const CLEANUP_RETRY_DELAY_MS = Number(process.env.SYNDICATE_CLEANUP_RETRY_DELAY_
 const CLEANUP_WATCH_REPEATS = Number(process.env.SYNDICATE_CLEANUP_WATCH_REPEATS || 6);
 
 let saveQueue = Promise.resolve();
+let storageWarningShown = false;
 
 function emptyState() {
   return { members: {} };
 }
 
+function warnAboutRuntimeStorage() {
+  if (storageWarningShown) return;
+  if (process.env.RENDER !== "true") return;
+  if (process.env.RENDER_PERSISTENT_DISK === "true") return;
+
+  storageWarningShown = true;
+  console.warn(
+    `[syndicateCleanup] Using file-based cleanup state at ${STATE_FILE}. ` +
+      "Configure a persistent disk or external database if cleanup state must survive Render rebuilds.",
+  );
+}
+
 function loadState() {
+  warnAboutRuntimeStorage();
+
   try {
     if (!fs.existsSync(STATE_FILE)) return emptyState();
     const parsed = JSON.parse(fs.readFileSync(STATE_FILE, "utf8") || "{}");
