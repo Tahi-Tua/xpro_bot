@@ -88,6 +88,12 @@ module.exports = {
     ...BYPASS_ROLE_IDS,
   ]),
 
+  // Full-channel purge is disabled by default. Set CLEAR_ALL_ENABLED=true only when needed.
+  CLEAR_ALL_ENABLED: process.env.CLEAR_ALL_ENABLED === "true",
+  CLEAR_ALL_ALLOWED_ROLE_IDS: csv(process.env.CLEAR_ALL_ALLOWED_ROLE_IDS, [
+    LEADER_ROLE_ID,
+  ]),
+
   // Role IDs for ticket management (Leaders and Staff)
   LEADER_ROLE_ID,  // ҲƤƦƠ ԼЄƛƊЄƦ 🌟
   STAFF_ROLE_ID,   // Xpro Pro Staff
