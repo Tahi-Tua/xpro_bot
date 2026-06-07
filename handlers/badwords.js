@@ -3,16 +3,15 @@ const path = require("path");
 const { Events, EmbedBuilder } = require("discord.js");
 const { MODERATION_LOG_CHANNEL_ID, MOD_ROLE_NAME, BUG_REPORTS_CHANNEL_ID, FILTER_EXEMPT_CHANNEL_IDS, FILTER_ENFORCED_CATEGORY_IDS } = require("../config/channels");
 const { hasBypassRole } = require("../utils/bypass");
-const { sendToTelegram } = require("../utils/telegram");
 const { increment: incViolations, getCount: getViolationCount, hasReachedThreshold } = require("../utils/violationStore");
 const { assignReadOnlyRole } = require("../utils/readOnlyRole");
 const { READ_ONLY_THRESHOLD } = require("../config/channels");
+const { analyzeBadwordContext } = require("../utils/openaiModeration");
 const {
   ZERO_WIDTH_REGEX,
   stripDiacritics,
   normalizeSymbols,
   normalizeContentForBadwords,
-  buildTelegramMessage,
 } = require("../utils/moderationUtils");
 
 const FILTER_EXEMPT_SET = new Set(FILTER_EXEMPT_CHANNEL_IDS || []);
@@ -249,7 +248,7 @@ async function sendModerationLog(guild, embed, user) {
   }
 }
 
-async function sendMemberBadwordReport(user, detectedWords, messageContent) {
+async function sendMemberBadwordReport(user, detectedWords, messageContent, aiDecision = null) {
   try {
     const userId = user.id;
     
@@ -274,6 +273,7 @@ async function sendMemberBadwordReport(user, detectedWords, messageContent) {
       type: "🔴 Bad Words/Insults",
       words: detectedWords,
       content: messageContent.substring(0, 100),
+      aiDecision,
       timestamp: new Date()
     });
 
@@ -289,7 +289,7 @@ async function sendMemberBadwordReport(user, detectedWords, messageContent) {
     
     const report = new EmbedBuilder()
       .setColor(0xff6b6b)
-      .setTitle("🔴 Bad Language Detected")
+      .setTitle("🔴 Bad Language Confirmed")
       .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
       .addFields(
         { 
@@ -308,6 +308,14 @@ async function sendMemberBadwordReport(user, detectedWords, messageContent) {
           inline: true 
         }
       );
+
+    if (aiDecision) {
+      report.addFields({
+        name: "🧠 Context Analysis",
+        value: `**Severity:** ${aiDecision.severity}\n**Action:** ${aiDecision.action}\n**Confidence:** ${Math.round((aiDecision.confidence || 0) * 100)}%\n**Reason:** ${aiDecision.reason}`.slice(0, 1024),
+        inline: false,
+      });
+    }
 
     // Add breakdown by word
     if (Object.keys(stats).length > 0) {
@@ -329,7 +337,7 @@ async function sendMemberBadwordReport(user, detectedWords, messageContent) {
       const recentViolations = history
         .slice(-5)
         .reverse()
-        .map((v, i) => `**${i + 1}.** ${v.words.join(", ")}\n└─ *"${v.content.substring(0, 60)}${v.content.length > 60 ? '...' : ''}"*`)
+        .map((v, i) => `**${i + 1}.** ${v.words.join(", ")}\n└─ *\"${v.content.substring(0, 60)}${v.content.length > 60 ? '...' : ''}\"*`)
         .join("\n\n");
       
       report.addFields({
@@ -340,7 +348,7 @@ async function sendMemberBadwordReport(user, detectedWords, messageContent) {
     }
 
     report
-      .setFooter({ text: "Automated Moderation System • Member-Spam Channel" })
+      .setFooter({ text: "Automated Moderation System • Context Checked" })
       .setTimestamp();
 
     return report;
@@ -348,6 +356,26 @@ async function sendMemberBadwordReport(user, detectedWords, messageContent) {
     console.error(`Failed to create bad word report for ${user.tag}:`, err.message);
     return null;
   }
+}
+
+async function sendFalsePositiveLog(message, detectedWords, aiDecision) {
+  const channel = message.guild.channels.cache.get(MODERATION_LOG_CHANNEL_ID);
+  if (!channel) return;
+
+  const embed = new EmbedBuilder()
+    .setColor(0x35c759)
+    .setTitle("✅ Badword false positive ignored")
+    .addFields(
+      { name: "👤 Member", value: `${message.author} (${message.author.id})`, inline: false },
+      { name: "📍 Channel", value: `${message.channel}`, inline: true },
+      { name: "🔎 Suspicious words", value: detectedWords.join(", ").slice(0, 1024) || "None", inline: false },
+      { name: "🧠 Context reason", value: String(aiDecision.reason || "No reason").slice(0, 1024), inline: false },
+      { name: "💬 Message", value: String(message.content || "").slice(0, 1024) || "Empty", inline: false },
+    )
+    .setFooter({ text: "Automated Moderation System • No action taken" })
+    .setTimestamp();
+
+  await channel.send({ embeds: [embed] }).catch(() => null);
 }
 
 module.exports = (client) => {
@@ -374,15 +402,28 @@ module.exports = (client) => {
     if (hasBypassRole(message.member)) return;
 
     const content = message.content || "";
-    if (!containsBadWord(content)) return;
+    const detectedWords = findBadWords(content);
+    if (!detectedWords.length) return;
+
+    const aiDecision = await analyzeBadwordContext({
+      content,
+      detectedWords,
+      authorTag: message.author.tag,
+      channelName: message.channel.name,
+    });
+
+    if (!aiDecision.is_violation || aiDecision.action === "ignore" || aiDecision.action === "log_only") {
+      console.log(
+        `✅ Badword false positive ignored for ${message.author.tag} in #${message.channel.name}: ${detectedWords.join(", ")} | ${aiDecision.reason}`,
+      );
+      await sendFalsePositiveLog(message, detectedWords, aiDecision);
+      return;
+    }
 
     await message.delete().catch(() => {});
-
-    // Find which bad words were used
-    const detectedWords = findBadWords(content);
     
     // Build professional violation report for the moderation channel
-    const reportEmbed = await sendMemberBadwordReport(message.author, detectedWords, content);
+    const reportEmbed = await sendMemberBadwordReport(message.author, detectedWords, content, aiDecision);
 
     // Send to moderation channel instead of DM
     if (reportEmbed) {
@@ -401,20 +442,8 @@ module.exports = (client) => {
     }
 
     console.log(
-      `🚨 Bad word(s) by ${message.author.tag} in #${message.channel.name}: ${detectedWords.join(", ")}`
+      `🚨 Bad word(s) confirmed by context for ${message.author.tag} in #${message.channel.name}: ${detectedWords.join(", ")} | ${aiDecision.reason}`
     );
-
-    if (typeof sendToTelegram === 'function') {
-      const telegramMessage = buildTelegramMessage({
-        prefix: '🔴 Insult detected',
-        author: message.author.tag,
-        authorId: message.author.id,
-        channel: message.channel.name,
-        words: detectedWords.slice(0, 3).join(", "),
-        content: content
-      });
-      sendToTelegram(telegramMessage, { parse_mode: 'Markdown' });
-    }
   });
 };
 
@@ -424,5 +453,3 @@ module.exports.findBadWords = findBadWords;
 module.exports.sendMemberBadwordReport = sendMemberBadwordReport;
 module.exports.purgeExpiredBadwordEntries = purgeExpiredBadwordEntries;
 module.exports.getBadwordCacheStats = getBadwordCacheStats;
-
-// noop touch to trigger Telegram file notifier
