@@ -46,6 +46,10 @@ module.exports = {
   FILTER_EXEMPT_CHANNEL_IDS: csv(process.env.FILTER_EXEMPT_CHANNEL_IDS, [
     "1381595826505253024",
   ]),
+  // Channels where spam/badword filters are always enforced.
+  FILTER_ENFORCED_CHANNEL_IDS: csv(process.env.FILTER_ENFORCED_CHANNEL_IDS, [
+    "1513192673660371174", // test-badwords
+  ]),
   // Categories where spam/badword filters are always enforced.
   FILTER_ENFORCED_CATEGORY_IDS: csv(process.env.FILTER_ENFORCED_CATEGORY_IDS, [
     "1380190903616147589",
