@@ -1,5 +1,17 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require("discord.js");
 
+function canActOnTarget(interaction, targetMember) {
+  if (!interaction.guild || !interaction.member || !targetMember) return false;
+  if (interaction.guild.ownerId === interaction.user.id) return true;
+  if (targetMember.id === interaction.guild.ownerId) return false;
+
+  const moderatorHighest = interaction.member.roles?.highest;
+  const targetHighest = targetMember.roles?.highest;
+
+  if (!moderatorHighest || !targetHighest) return false;
+  return moderatorHighest.position > targetHighest.position;
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("ban")
@@ -27,12 +39,19 @@ module.exports = {
       return interaction.reply({ content: "I cannot find this member on the server.", flags: MessageFlags.Ephemeral });
     }
 
-    if (!member.bannable) {
-      return interaction.reply({ content: "I cannot ban this member (role too high or insufficient permissions).", flags: MessageFlags.Ephemeral });
-    }
-
     if (member.id === interaction.user.id) {
       return interaction.reply({ content: "You cannot ban yourself.", flags: MessageFlags.Ephemeral });
+    }
+
+    if (!canActOnTarget(interaction, member)) {
+      return interaction.reply({
+        content: "You cannot ban a member with an equal or higher role than yours.",
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    if (!member.bannable) {
+      return interaction.reply({ content: "I cannot ban this member (role too high or insufficient permissions).", flags: MessageFlags.Ephemeral });
     }
 
     await member.ban({ reason: `${reason} (by ${interaction.user.tag})` });
