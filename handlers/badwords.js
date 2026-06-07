@@ -1,7 +1,14 @@
 const fs = require("fs");
 const path = require("path");
 const { Events, EmbedBuilder } = require("discord.js");
-const { MODERATION_LOG_CHANNEL_ID, MOD_ROLE_NAME, BUG_REPORTS_CHANNEL_ID, FILTER_EXEMPT_CHANNEL_IDS, FILTER_ENFORCED_CATEGORY_IDS } = require("../config/channels");
+const {
+  MODERATION_LOG_CHANNEL_ID,
+  MOD_ROLE_NAME,
+  BUG_REPORTS_CHANNEL_ID,
+  FILTER_EXEMPT_CHANNEL_IDS,
+  FILTER_ENFORCED_CHANNEL_IDS,
+  FILTER_ENFORCED_CATEGORY_IDS,
+} = require("../config/channels");
 const { hasBypassRole } = require("../utils/bypass");
 const { increment: incViolations, getCount: getViolationCount, hasReachedThreshold } = require("../utils/violationStore");
 const { assignReadOnlyRole } = require("../utils/readOnlyRole");
@@ -15,6 +22,7 @@ const {
 } = require("../utils/moderationUtils");
 
 const FILTER_EXEMPT_SET = new Set(FILTER_EXEMPT_CHANNEL_IDS || []);
+const FILTER_ENFORCED_CHANNEL_SET = new Set(FILTER_ENFORCED_CHANNEL_IDS || []);
 const FILTER_ENFORCED_CATEGORY_SET = new Set(FILTER_ENFORCED_CATEGORY_IDS || []);
 
 const badwordsJson = JSON.parse(
@@ -395,11 +403,12 @@ module.exports = (client) => {
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot || !message.inGuild()) return;
     if (BUG_REPORTS_CHANNEL_ID && message.channel.id === BUG_REPORTS_CHANNEL_ID) return;
+    const isInEnforcedChannel = FILTER_ENFORCED_CHANNEL_SET.has(message.channel.id);
     const isInEnforcedCategory =
       FILTER_ENFORCED_CATEGORY_SET.has(message.channel.parentId) ||
       FILTER_ENFORCED_CATEGORY_SET.has(message.channel.parent?.parentId);
-    if (!isInEnforcedCategory && FILTER_EXEMPT_SET.has(message.channel.id)) return;
-    if (hasBypassRole(message.member)) return;
+    if (!isInEnforcedChannel && !isInEnforcedCategory && FILTER_EXEMPT_SET.has(message.channel.id)) return;
+    if (hasBypassRole(message.member) && !isInEnforcedChannel) return;
 
     const content = message.content || "";
     const detectedWords = findBadWords(content);
