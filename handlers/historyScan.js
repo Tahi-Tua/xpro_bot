@@ -1,20 +1,18 @@
 const { ChannelType, EmbedBuilder, PermissionsBitField } = require("discord.js");
 const { MODERATION_LOG_CHANNEL_ID, BUG_REPORTS_CHANNEL_ID, FILTER_EXEMPT_CHANNEL_IDS } = require("../config/channels");
 const { hasBypassRole } = require("../utils/bypass");
+const { analyzeBadwordContext } = require("../utils/openaiModeration");
 const badwordsHandler = require("./badwords");
 const spamHandler = require("./spam");
 
-// The number of messages to scan per channel at startup.  A value of 0
-// disables the startup scan entirely.  Scanning a large number of
+// The number of messages to scan per channel at startup. A value of 0
+// disables the startup scan entirely. Scanning a large number of
 // messages on every restart can trigger rate limits on Discord and slow
-// down the bot, so the default is disabled.  Set the environment
-// variable STARTUP_SCAN_LIMIT to a positive integer to enable.
+// down the bot, so the default is disabled. Set STARTUP_SCAN_LIMIT to enable.
 const STARTUP_SCAN_LIMIT = Number(process.env.STARTUP_SCAN_LIMIT ?? 0);
 
-// The maximum number of channels to scan at startup.  If set to 0 or
-// undefined, all scannable channels will be scanned (subject to
-// STARTUP_SCAN_LIMIT).  You can override this via
-// STARTUP_SCAN_CHANNEL_LIMIT in your environment.
+// The maximum number of channels to scan at startup. If set to 0 or
+// undefined, all scannable channels will be scanned.
 const STARTUP_SCAN_CHANNEL_LIMIT = Number(process.env.STARTUP_SCAN_CHANNEL_LIMIT ?? 0);
 const SCANNABLE_CHANNEL_TYPES = new Set([
   ChannelType.GuildText,
@@ -22,9 +20,6 @@ const SCANNABLE_CHANNEL_TYPES = new Set([
   ChannelType.PublicThread,
   ChannelType.AnnouncementThread,
 ]);
-
-const TELEGRAM_PREFIX = "?? Startup scan";
-const { sendToTelegram } = require("../utils/telegram");
 
 const FILTER_EXEMPT_SET = new Set(FILTER_EXEMPT_CHANNEL_IDS || []);
 
@@ -62,40 +57,35 @@ async function ensureMember(guild, userId, cache) {
   return member;
 }
 
-async function handleBadwordViolation(message, detectedWords) {
-  await message.delete().catch(() => {});
-
+async function logBadwordFinding(message, detectedWords, aiDecision) {
   const reportEmbed = await badwordsHandler.sendMemberBadwordReport(
     message.author,
     detectedWords,
     message.content || "",
+    aiDecision,
   );
 
-  if (reportEmbed) {
-    reportEmbed.addFields(
-      { name: "Scan", value: "Startup history", inline: true },
+  const embed = reportEmbed || new EmbedBuilder()
+    .setColor(0xffa500)
+    .setTitle("Badword detected by startup history scan")
+    .addFields(
+      { name: "Member", value: `${message.author}`, inline: true },
       { name: "Channel", value: `${message.channel}`, inline: true },
-    );
-    await badwordsHandler.sendModerationLog(message.guild, reportEmbed, message.author);
-  }
+      { name: "Words", value: detectedWords.join(", ") || "N/A" },
+    )
+    .setTimestamp();
 
-  if (typeof sendToTelegram === 'function') {
-    const snippet =
-      message.content && message.content.length > 800
-        ? `${message.content.slice(0, 800)}.`
-        : message.content || "(empty)";
-    sendToTelegram(
-      `${TELEGRAM_PREFIX}\n?? Old abusive message\n?? ${message.author.tag} (${message.author.id})\n#?? #${message.channel.name}\n?? Words: ${detectedWords.slice(0, 3).join(", ")}\n?? ${snippet}`,
-      { parse_mode: 'Markdown' },
-    );
-  }
+  embed.addFields(
+    { name: "Scan", value: "Startup history log-only mode", inline: true },
+    { name: "Context reason", value: String(aiDecision?.reason || "No reason").slice(0, 1024), inline: false },
+  );
+
+  await badwordsHandler.sendModerationLog(message.guild, embed, message.author);
 }
 
-async function handleSpamViolation(message, reasons) {
-  await message.delete().catch(() => {});
-
+async function logSpamFinding(message, reasons) {
   const violationObjects = reasons.map((reason) => ({
-    type: `?? ${reason}`,
+    type: `Spam: ${reason}`,
     content: (message.content || "").substring(0, 100),
   }));
 
@@ -115,7 +105,7 @@ async function handleSpamViolation(message, reasons) {
     reportEmbed ||
     new EmbedBuilder()
       .setColor(0xffa500)
-      .setTitle("?? Spam detected (history)")
+      .setTitle("Spam detected by startup history scan")
       .addFields(
         { name: "Member", value: `${message.author}`, inline: true },
         { name: "Channel", value: `${message.channel}`, inline: true },
@@ -123,20 +113,13 @@ async function handleSpamViolation(message, reasons) {
       )
       .setTimestamp();
 
-  embed.addFields({ name: "Scan", value: "Startup history", inline: true });
+  embed.addFields({
+    name: "Scan",
+    value: "Startup history log-only mode",
+    inline: true,
+  });
 
   await badwordsHandler.sendModerationLog(message.guild, embed, message.author);
-
-  if (typeof sendToTelegram === 'function') {
-    const snippet =
-      message.content && message.content.length > 800
-        ? `${message.content.slice(0, 800)}.`
-        : message.content || "(empty)";
-    sendToTelegram(
-      `${TELEGRAM_PREFIX}\n?? Old spam\n?? ${message.author.tag} (${message.author.id})\n#?? #${message.channel.name}\n?? ${reasons.join(", ")}\n?? ${snippet}`,
-      { parse_mode: 'Markdown' },
-    );
-  }
 }
 
 async function scanChannel(channel, client, memberCache) {
@@ -166,16 +149,25 @@ async function scanChannel(channel, client, memberCache) {
     if (badwordsHandler.containsBadWord(content)) {
       const detectedWords = badwordsHandler.findBadWords(content);
       if (detectedWords.length > 0) {
-        flagged += 1;
-        await handleBadwordViolation(message, detectedWords);
-        continue;
+        const aiDecision = await analyzeBadwordContext({
+          content,
+          detectedWords,
+          authorTag: message.author.tag,
+          channelName: channel.name,
+        });
+
+        if (aiDecision.is_violation && aiDecision.action !== "ignore" && aiDecision.action !== "log_only") {
+          flagged += 1;
+          await logBadwordFinding(message, detectedWords, aiDecision);
+          continue;
+        }
       }
     }
 
     const spamReasons = spamHandler.detectSpamViolations(message);
     if (spamReasons.length > 0) {
       flagged += 1;
-      await handleSpamViolation(message, spamReasons);
+      await logSpamFinding(message, spamReasons);
     }
   }
 
@@ -184,9 +176,11 @@ async function scanChannel(channel, client, memberCache) {
 
 async function runStartupHistoryScan(client) {
   if (STARTUP_SCAN_LIMIT <= 0) {
-    console.log("?? Startup scan disabled (STARTUP_SCAN_LIMIT <= 0)");
+    console.log("Startup scan disabled (STARTUP_SCAN_LIMIT <= 0)");
     return;
   }
+
+  console.log(`Startup scan enabled in log-only mode: limit=${STARTUP_SCAN_LIMIT}`);
 
   const memberCache = new Map();
 
@@ -203,7 +197,7 @@ async function runStartupHistoryScan(client) {
       const { scanned, flagged } = await scanChannel(channel, client, memberCache);
       if (scanned > 0) {
         console.log(
-          `?? Startup scan: #${channel.name} (${channel.id}) -> ${flagged} issue(s) in ${scanned} messages`,
+          `Startup scan: #${channel.name} (${channel.id}) -> ${flagged} issue(s) in ${scanned} messages`,
         );
       }
     }
