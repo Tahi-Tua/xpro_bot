@@ -1,6 +1,6 @@
 /**
  * Mute State Manager
- * Persists mute information to survive bot restarts.
+ * Persists mute information to survive bot restarts when the configured path is persistent.
  * Stores when a mute should expire so it can be lifted on restart.
  */
 
@@ -13,10 +13,21 @@ const STATE_PATH = process.env.MUTE_STATE_FILE || path.join(__dirname, "..", "da
 let store = {};
 let saveQueue = Promise.resolve();
 
+function warnAboutRuntimeStorage() {
+  if (process.env.RENDER !== "true") return;
+  if (process.env.RENDER_PERSISTENT_DISK === "true") return;
+  console.warn(
+    `[muteStore] Using file-based mute state at ${STATE_PATH}. ` +
+      "Configure a persistent disk or external database if mute state must survive Render rebuilds.",
+  );
+}
+
 /**
  * Load mute state from disk synchronously (called once at startup).
  */
 function loadStore() {
+  warnAboutRuntimeStorage();
+
   try {
     if (fs.existsSync(STATE_PATH)) {
       const raw = fs.readFileSync(STATE_PATH, "utf8");
@@ -38,6 +49,7 @@ function saveStore() {
   saveQueue = saveQueue
     .then(async () => {
       try {
+        await fsPromises.mkdir(path.dirname(STATE_PATH), { recursive: true });
         await fsPromises.writeFile(STATE_PATH, JSON.stringify(store, null, 2), "utf8");
       } catch (err) {
         console.warn("⚠️ Could not save mute state:", err.message);
