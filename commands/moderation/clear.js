@@ -1,7 +1,29 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require("discord.js");
+const {
+  CLEAR_ALL_ALLOWED_ROLE_IDS,
+  CLEAR_ALL_ENABLED,
+  MODERATION_LOG_CHANNEL_ID,
+} = require("../../config/channels");
 
 async function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function sendPurgeAuditLog(interaction, status, extra = "") {
+  const logChannel = interaction.guild.channels.cache.get(MODERATION_LOG_CHANNEL_ID) ||
+    await interaction.guild.channels.fetch(MODERATION_LOG_CHANNEL_ID).catch(() => null);
+
+  if (!logChannel?.isTextBased?.()) return;
+
+  await logChannel.send({
+    content:
+      `🧹 **Clear all audit**\n` +
+      `Status: **${status}**\n` +
+      `Executor: ${interaction.user.tag} (${interaction.user.id})\n` +
+      `Channel: ${interaction.channel} (${interaction.channelId})\n` +
+      `${extra}`,
+    allowedMentions: { parse: [] },
+  }).catch(() => {});
 }
 
 async function purgeAllMessages(channel) {
@@ -33,6 +55,12 @@ async function purgeAllMessages(channel) {
   return totalDeleted;
 }
 
+function hasAllowedFullPurgeRole(interaction) {
+  if (interaction.guild.ownerId === interaction.user.id) return true;
+  const roles = interaction.member?.roles?.cache;
+  return CLEAR_ALL_ALLOWED_ROLE_IDS.some((roleId) => roles?.has(roleId));
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("clear")
@@ -54,7 +82,7 @@ module.exports = {
     .addSubcommand((sub) =>
       sub
         .setName("all")
-        .setDescription("Delete ALL messages in this channel (use with care).")
+        .setDescription("Delete ALL messages in this channel (disabled unless explicitly enabled).")
         .addStringOption((option) =>
           option
             .setName("confirm")
@@ -84,30 +112,42 @@ module.exports = {
     }
 
     if (sub === "all") {
+      if (!CLEAR_ALL_ENABLED) {
+        await sendPurgeAuditLog(interaction, "blocked", "Reason: `CLEAR_ALL_ENABLED` is not true.\n");
+        return interaction.reply({
+          content: "❌ Full-channel purge is disabled. Set `CLEAR_ALL_ENABLED=true` only when you really need it.",
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
       const hasFullPurgePermission =
         interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
         interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels);
 
-      if (!hasFullPurgePermission) {
+      if (!hasFullPurgePermission || !hasAllowedFullPurgeRole(interaction)) {
+        await sendPurgeAuditLog(interaction, "blocked", "Reason: missing full-purge permission or allowed role.\n");
         return interaction.reply({
-          content: "❌ Full-channel purge requires Administrator or Manage Channels permission.",
+          content: "❌ Full-channel purge requires Administrator/Manage Channels and an allowed leader role.",
           flags: MessageFlags.Ephemeral,
         });
       }
 
       const confirmation = interaction.options.getString("confirm");
-      if (confirmation !== "DELETE ALL") {
+      const expectedConfirmation = `DELETE ALL ${interaction.channelId}`;
+      if (confirmation !== expectedConfirmation) {
         return interaction.reply({
-          content: '❌ Full-channel purge cancelled. Type exactly `DELETE ALL` in the confirm option.',
+          content: `❌ Full-channel purge cancelled. Type exactly \`${expectedConfirmation}\` in the confirm option.`,
           flags: MessageFlags.Ephemeral,
         });
       }
 
+      await sendPurgeAuditLog(interaction, "started");
       await interaction.reply({ content: "🧹 Starting full-channel purge…", flags: MessageFlags.Ephemeral });
       console.warn(
         `[clear all] ${interaction.user.tag} (${interaction.user.id}) started full purge in #${interaction.channel?.name} (${interaction.channelId})`,
       );
       const count = await purgeAllMessages(interaction.channel);
+      await sendPurgeAuditLog(interaction, "completed", `Deleted approx: **${count}** message(s).\n`);
       return interaction.followUp({ content: `✅ Purge complete. Deleted ~**${count}** messages.` });
     }
   }
