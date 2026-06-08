@@ -38,7 +38,7 @@ function loadTxtBadwords() {
       .map((w) => w.trim())
       .filter((w) => w && !w.startsWith("#"));
   } catch (err) {
-    console.warn("?? badwords-list.txt not found or unreadable:", err.message);
+    console.warn("badwords-list.txt not found or unreadable:", err.message);
     return [];
   }
 }
@@ -84,21 +84,17 @@ singleWordList.forEach((word) => {
   badwordLookup.set(normalized, word);
 });
 
-const normalizedPhrases = [];
-const phraseLookup = new Map();
 const phraseRegexes = [];
 phraseList.forEach((phrase) => {
   const normalized = normalizeSymbols(stripDiacritics(phrase.toLowerCase()));
   if (!normalized) return;
-  normalizedPhrases.push(normalized);
-  phraseLookup.set(normalized, phrase);
   phraseRegexes.push({ regex: new RegExp(`(^|\\s)${escapeRegex(normalized)}(\\s|$)`), original: phrase });
 });
 
 const memberBadwordStats = new Map(); // Track bad word violations per member
 const memberBadwordHistory = new Map(); // Track all bad word violations per member
 const memberBadwordReports = new Map(); // Store report message IDs for updating in DMs
-const memberModLogMessages = new Map(); // Store moderation log message IDs for updating
+const memberModLogMessages = new Map(); // Store moderation log message IDs by user and type
 const memberBadwordLastUpdated = new Map(); // Track last violation timestamp per member
 
 // Prevent unbounded memory usage for long-running processes.
@@ -123,7 +119,11 @@ function purgeExpiredBadwordEntries(now = Date.now()) {
     memberBadwordStats.delete(userId);
     memberBadwordHistory.delete(userId);
     memberBadwordReports.delete(userId);
-    memberModLogMessages.delete(userId);
+
+    for (const key of memberModLogMessages.keys()) {
+      if (key.startsWith(`${userId}:`)) memberModLogMessages.delete(key);
+    }
+
     purged += 1;
   }
 
@@ -206,22 +206,22 @@ function findBadWords(text) {
   return Array.from(matched);
 }
 
-async function sendModerationLog(guild, embed, user) {
-  console.log(`📋 Sending moderation log to channel ID: ${MODERATION_LOG_CHANNEL_ID}`);
+async function sendModerationLog(guild, embed, user, options = {}) {
   const channel = guild.channels.cache.get(MODERATION_LOG_CHANNEL_ID);
   if (!channel) {
-    console.log(`❌ Channel ${MODERATION_LOG_CHANNEL_ID} not found in cache`);
+    console.log(`Moderation channel ${MODERATION_LOG_CHANNEL_ID} not found in cache`);
     return;
   }
-  console.log(`✅ Found channel: ${channel.name} (${channel.id})`);
   
   const userId = user.id;
-  const oldMessageId = memberModLogMessages.get(userId);
+  const logType = options.type || "general";
+  const logKey = `${userId}:${logType}`;
+  const oldMessageId = memberModLogMessages.get(logKey);
   
   const staffRole = guild.roles.cache.find((r) => r.name === MOD_ROLE_NAME);
   
   try {
-    // Try to update existing message
+    // Try to update existing message for the same user and log type only.
     if (oldMessageId) {
       try {
         const oldMessage = await channel.messages.fetch(oldMessageId).catch(() => null);
@@ -230,29 +230,26 @@ async function sendModerationLog(guild, embed, user) {
             content: staffRole ? `${staffRole}` : "",
             embeds: [embed],
           }).catch(() => null);
-          console.log(`✅ Updated existing mod log message for ${user.tag}`);
           return;
         }
       } catch (err) {
-        console.error(`Failed to update old message:`, err.message);
+        console.error("Failed to update old moderation log message:", err.message);
       }
     }
     
-    // If update failed or no old message, send new one
     const newMessage = await channel.send({
       content: staffRole ? `${staffRole}` : "",
       embeds: [embed],
     }).catch((err) => {
-      console.log(`❌ Error sending to channel: ${err.message}`);
+      console.log(`Error sending moderation log: ${err.message}`);
       return null;
     });
     
     if (newMessage) {
-      memberModLogMessages.set(userId, newMessage.id);
-      console.log(`✅ Sent new mod log message for ${user.tag}`);
+      memberModLogMessages.set(logKey, newMessage.id);
     }
   } catch (err) {
-    console.error(`Error in sendModerationLog:`, err.message);
+    console.error("Error in sendModerationLog:", err.message);
   }
 }
 
@@ -436,7 +433,7 @@ module.exports = (client) => {
 
     // Send to moderation channel instead of DM
     if (reportEmbed) {
-      await sendModerationLog(message.guild, reportEmbed, message.author);
+      await sendModerationLog(message.guild, reportEmbed, message.author, { type: "badword" });
     }
 
     // Persist violation count and check threshold
