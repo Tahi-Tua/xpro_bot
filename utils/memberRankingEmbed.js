@@ -5,51 +5,85 @@ function formatNumber(value) {
 }
 
 function medalForRank(index) {
-  return ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][index] || `${index + 1}.`;
+  return ["🥇", "🥈", "🥉", "🏅", "🏅"][index] || "🏅";
+}
+
+function barForScore(score, maxScore) {
+  const total = 12;
+  if (!maxScore || maxScore <= 0) return "░".repeat(total);
+  const filled = Math.max(1, Math.round((Number(score || 0) / maxScore) * total));
+  return "█".repeat(Math.min(total, filled)) + "░".repeat(Math.max(0, total - filled));
+}
+
+function displayName(entry) {
+  return entry.tag || entry.username || entry.userId;
 }
 
 function buildMemberRankingEmbed(rankings, options = {}) {
   const top = Array.isArray(rankings) ? rankings.slice(0, 5) : [];
   const updatedBy = options.updatedBy || null;
+  const maxSeason = Math.max(...top.map((entry) => Number(entry.season || 0)), 0);
 
   const embed = new EmbedBuilder()
-    .setColor(0x00c853)
-    .setTitle("🏆 Bullet Echo — Top 5 Member Rankings")
+    .setColor(0xf1c40f)
+    .setTitle("🏆 BULLET ECHO — TOP 5 SAISON")
     .setDescription(
       top.length
-        ? "Classement des membres les plus actifs et contributeurs du syndicat."
+        ? "Classement officiel des meilleurs contributeurs de la saison."
         : "Aucun classement enregistré pour le moment.",
     )
-    .setFooter({ text: "XPRO Ranking System • Scores saisis par le staff" })
+    .setFooter({ text: "XPRO Ranking System • Classement saison" })
     .setTimestamp();
 
   if (!top.length) {
     embed.addFields({
-      name: "Aucune donnée",
-      value: "Utilise `/ranking set` pour ajouter les premiers scores.",
+      name: "📭 Aucune donnée",
+      value: "Utilise `/ranking set` pour ajouter les premiers scores saison.",
       inline: false,
     });
     return embed;
   }
 
-  const lines = top.map((entry, index) => {
-    const medal = medalForRank(index);
-    return [
-      `${medal} <@${entry.userId}>`,
-      `Score: **${formatNumber(entry.score)}**`,
-      `Weekly: ${formatNumber(entry.weekly)} • Season: ${formatNumber(entry.season)} • Daily XP: ${formatNumber(entry.dailyXp)}`,
-    ].join("\n");
-  });
+  const podium = top.slice(0, 3).map((entry, index) => {
+    return `${medalForRank(index)} **#${index + 1} — ${displayName(entry)}**\n⭐ Saison : **${formatNumber(entry.season)}**`;
+  }).join("\n\n");
 
   embed.addFields({
-    name: "Top 5",
-    value: lines.join("\n\n").slice(0, 4096),
+    name: "👑 Podium",
+    value: podium,
     inline: false,
   });
 
+  const board = top.map((entry, index) => {
+    const rank = `#${index + 1}`.padEnd(3, " ");
+    const name = displayName(entry).slice(0, 22);
+    const bar = barForScore(entry.season, maxSeason);
+    return `${medalForRank(index)} **${rank} ${name}**\n\` ${bar} \`  **${formatNumber(entry.season)}** saison`;
+  }).join("\n\n");
+
+  embed.addFields({
+    name: "📊 Tableau saison",
+    value: board.slice(0, 4096),
+    inline: false,
+  });
+
+  const totalSeason = top.reduce((sum, entry) => sum + Number(entry.season || 0), 0);
+  embed.addFields(
+    {
+      name: "🏆 Leader actuel",
+      value: `**${displayName(top[0])}**\n${formatNumber(top[0].season)} points saison`,
+      inline: true,
+    },
+    {
+      name: "📈 Total Top 5",
+      value: `${formatNumber(totalSeason)} points saison`,
+      inline: true,
+    },
+  );
+
   if (updatedBy) {
     embed.addFields({
-      name: "Dernière mise à jour par",
+      name: "🛠️ Mise à jour",
       value: updatedBy,
       inline: true,
     });
