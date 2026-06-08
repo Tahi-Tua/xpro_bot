@@ -33,7 +33,7 @@ function buildRankingTable(top) {
   });
 
   return [
-    "RANG  MEMBRE               SAISON",
+    "RANK  MEMBER               SEASON",
     "────  ──────────────────   ──────────",
     ...rows,
   ].join("\n");
@@ -45,19 +45,19 @@ function buildMemberRankingEmbed(rankings, options = {}) {
 
   const embed = new EmbedBuilder()
     .setColor(0xd4af37)
-    .setTitle("🏆 CLASSEMENT SAISON — BULLET ECHO")
+    .setTitle("🏆 SEASON RANKING — BULLET ECHO")
     .setDescription(
       top.length
-        ? "**Top 5 officiel des meilleurs contributeurs du syndicat.**"
-        : "Aucun classement enregistré pour le moment.",
+        ? "**Official Top 5 season contributors of the syndicate.**"
+        : "No ranking data has been saved yet.",
     )
-    .setFooter({ text: "XPRO Ranking System • Classement saison" })
+    .setFooter({ text: "XPRO Ranking System • Season leaderboard" })
     .setTimestamp();
 
   if (!top.length) {
     embed.addFields({
-      name: "Aucune donnée",
-      value: "Utilise `/ranking set` pour ajouter les premiers scores saison.",
+      name: "No data",
+      value: "Use `/ranking set` to add the first season scores.",
       inline: false,
     });
     return embed;
@@ -68,18 +68,18 @@ function buildMemberRankingEmbed(rankings, options = {}) {
 
   embed.addFields(
     {
-      name: "👑 CHAMPION ACTUEL",
-      value: `**${displayName(champion)}**\n⭐ **${formatNumber(champion.season)}** points saison`,
+      name: "👑 CURRENT CHAMPION",
+      value: `**${displayName(champion)}**\n⭐ **${formatNumber(champion.season)}** season points`,
       inline: false,
     },
     {
-      name: "📋 TABLEAU OFFICIEL",
+      name: "📋 OFFICIAL LEADERBOARD",
       value: `\`\`\`text\n${buildRankingTable(top)}\n\`\`\``,
       inline: false,
     },
     {
-      name: "📊 TOTAL TOP 5",
-      value: `**${formatNumber(totalSeason)}** points saison`,
+      name: "📊 TOP 5 TOTAL",
+      value: `**${formatNumber(totalSeason)}** season points`,
       inline: true,
     },
     {
@@ -94,7 +94,7 @@ function buildMemberRankingEmbed(rankings, options = {}) {
 
   if (updatedBy) {
     embed.addFields({
-      name: "Mise à jour",
+      name: "Updated by",
       value: updatedBy,
       inline: true,
     });
