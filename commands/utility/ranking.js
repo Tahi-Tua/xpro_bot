@@ -2,7 +2,6 @@ const { SlashCommandBuilder, MessageFlags, PermissionFlagsBits } = require("disc
 const {
   LEADER_ROLE_ID,
   MEMBER_RANKINGS_CHANNEL_ID,
-  RANKING_LOG_CHANNEL_ID,
   STAFF_ROLE_ID,
 } = require("../../config/channels");
 const {
@@ -23,22 +22,6 @@ function canManageRankings(interaction) {
       roles?.has(STAFF_ROLE_ID) ||
       interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild),
   );
-}
-
-async function sendRankingAuditLog(interaction, action, details = "") {
-  const channel = interaction.guild.channels.cache.get(RANKING_LOG_CHANNEL_ID) ||
-    await interaction.guild.channels.fetch(RANKING_LOG_CHANNEL_ID).catch(() => null);
-
-  if (!channel?.isTextBased?.()) return;
-
-  await channel.send({
-    content:
-      `🏆 **Ranking audit**\n` +
-      `Action: **${action}**\n` +
-      `By: ${interaction.user.tag} (${interaction.user.id})\n` +
-      `${details}`,
-    allowedMentions: { parse: [] },
-  }).catch(() => {});
 }
 
 function rankingSummary(rankings) {
@@ -175,12 +158,6 @@ module.exports = {
         updatedBy: interaction.user.id,
       });
 
-      await sendRankingAuditLog(
-        interaction,
-        "set",
-        `Member: ${member.tag} (${member.id})\nWeekly: ${weekly}\nSeason: ${season}\nDaily XP: ${dailyXp}\n`,
-      );
-
       return interaction.reply({
         content: `✅ Ranking updated for **${member.tag}**.\nScore total: **${formatNumber(weekly + season + dailyXp)}**`,
         flags: MessageFlags.Ephemeral,
@@ -194,7 +171,6 @@ module.exports = {
         return interaction.editReply(`❌ ${result.error}`);
       }
 
-      await sendRankingAuditLog(interaction, result.updated ? "publish_update" : "publish_new", `Message ID: ${result.messageId}\n`);
       return interaction.editReply(
         result.updated
           ? `✅ Ranking message updated in ${result.channel}.`
@@ -205,7 +181,6 @@ module.exports = {
     if (subcommand === "remove") {
       const member = interaction.options.getUser("member");
       const removed = await removeMemberRanking(member.id);
-      await sendRankingAuditLog(interaction, "remove", `Member: ${member.tag} (${member.id})\nRemoved: ${removed ? "yes" : "no"}\n`);
 
       return interaction.reply({
         content: removed
@@ -225,7 +200,6 @@ module.exports = {
       }
 
       await resetRankings();
-      await sendRankingAuditLog(interaction, "reset", "All ranking data cleared.\n");
 
       return interaction.reply({
         content: "✅ All member rankings have been reset.",
