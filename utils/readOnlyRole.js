@@ -1,6 +1,5 @@
 const { ChannelType, EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { READ_ONLY_ROLE_NAME, READ_ONLY_THRESHOLD, MODERATION_LOG_CHANNEL_ID, MOD_ROLE_NAME } = require("../config/channels");
-const { sendToTelegram } = require("./telegram");
+const { READ_ONLY_ROLE_NAME, READ_ONLY_THRESHOLD } = require("../config/channels");
 
 const CONFIGURED_GUILDS = new Set();
 const TEXT_BASED_CHANNEL_TYPES = new Set([
@@ -126,7 +125,7 @@ async function assignReadOnlyRole(member, totalViolations) {
 
     const dmEmbed = new EmbedBuilder()
       .setColor(0x5865f2)
-      .setTitle("?? Read-only mode enabled")
+      .setTitle("Read-only mode enabled")
       .setDescription(
         `You have reached **${totalViolations}** violations.\n\n` +
         `You can read channels and react to messages, but you cannot send messages for now.\n` +
@@ -142,7 +141,7 @@ async function assignReadOnlyRole(member, totalViolations) {
 
     const modEmbed = new EmbedBuilder()
       .setColor(0x2f3136)
-      .setTitle("?? \"READ ONLY\" role assigned")
+      .setTitle('"READ ONLY" role assigned')
       .addFields(
         { name: "Member", value: `${member.user.tag} (${member.id})`, inline: true },
         { name: "Violations", value: `${totalViolations}`, inline: true },
@@ -152,14 +151,7 @@ async function assignReadOnlyRole(member, totalViolations) {
 
     const { sendModerationLog } = require("../handlers/badwords");
     if (typeof sendModerationLog === "function") {
-      await sendModerationLog(guild, modEmbed, member.user);
-    }
-
-    if (typeof sendToTelegram === "function") {
-      sendToTelegram(
-        `?? Read-only role assigned\n?? ${member.user.tag} (${member.id})\n??? Violations: ${totalViolations}`,
-        { parse_mode: "Markdown" }
-      );
+      await sendModerationLog(guild, modEmbed, member.user, { type: "readonly" });
     }
 
     return true;
