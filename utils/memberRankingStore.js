@@ -83,7 +83,7 @@ function calculateScore(entry) {
   return toSafeNumber(entry.season) + toSafeNumber(entry.weekly) + toSafeNumber(entry.dailyXp);
 }
 
-function upsertMemberRanking({ userId, tag, displayName, weekly = 0, season = 0, dailyXp = 0, updatedBy }) {
+function upsertMemberRanking({ userId, tag, displayName, avatarUrl, weekly = 0, season = 0, dailyXp = 0, updatedBy }) {
   if (!userId) throw new Error("userId is required");
   const current = loadState();
 
@@ -91,6 +91,7 @@ function upsertMemberRanking({ userId, tag, displayName, weekly = 0, season = 0,
     userId,
     tag: tag || userId,
     displayName: displayName || tag || userId,
+    avatarUrl: avatarUrl || null,
     weekly: toSafeNumber(weekly),
     season: toSafeNumber(season),
     dailyXp: toSafeNumber(dailyXp),
