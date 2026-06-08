@@ -22,6 +22,7 @@ const {
 
 const ROSTER_PATH = process.env.MEMBER_RANKING_ROSTER_FILE || path.join(__dirname, "..", "..", "data", "memberRankingRoster.json");
 const ROSTER_URL = process.env.MEMBER_RANKING_ROSTER_URL || "https://raw.githubusercontent.com/Tahi-Tua/xpro_bot/main/data/memberRankingRoster.json";
+const SCOREBOARD_URL = process.env.SCOREBOARD_URL || "https://tahi-tua.github.io/xpro_bot/public/scoreboard.html";
 
 function canManageRankings(interaction) {
   const roles = interaction.member?.roles?.cache;
@@ -245,6 +246,11 @@ module.exports = {
     )
     .addSubcommand((subcommand) =>
       subcommand
+        .setName("web")
+        .setDescription("Get the responsive HTML scoreboard link."),
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
         .setName("publish")
         .setDescription("Generate a private ranking preview for manual reposting."),
     )
@@ -291,6 +297,17 @@ module.exports = {
       const embeds = buildFullRankingEmbeds(allRankings, { pageSize: 10 });
       return interaction.reply({
         embeds,
+        flags: MessageFlags.Ephemeral,
+        allowedMentions: { parse: [] },
+      });
+    }
+
+    if (subcommand === "web") {
+      return interaction.reply({
+        content:
+          "🏆 **XPRO Season Scoreboard**\n" +
+          "Tableau complet responsive en HTML/CSS/JS :\n" +
+          `${SCOREBOARD_URL}`,
         flags: MessageFlags.Ephemeral,
         allowedMentions: { parse: [] },
       });
