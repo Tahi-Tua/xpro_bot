@@ -5,7 +5,7 @@ function formatNumber(value) {
 }
 
 function medalForRank(index) {
-  return ["🥇", "🥈", "🥉", "🏅", "🏅"][index] || "🏅";
+  return ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][index] || `${index + 1}.`;
 }
 
 function displayName(entry) {
@@ -14,17 +14,39 @@ function displayName(entry) {
     .trim();
 }
 
-function truncateName(value, maxLength = 28) {
+function truncateName(value, maxLength = 18) {
   const name = displayName({ displayName: value });
   if (name.length <= maxLength) return name;
   return `${name.slice(0, maxLength - 1)}…`;
 }
 
-function progressBar(value, maxValue) {
-  const total = 10;
-  if (!maxValue || maxValue <= 0) return "▱".repeat(total);
-  const filled = Math.max(1, Math.round((Number(value || 0) / maxValue) * total));
-  return "▰".repeat(Math.min(total, filled)) + "▱".repeat(Math.max(0, total - filled));
+function padRight(value, length) {
+  const str = String(value || "");
+  if (str.length >= length) return str;
+  return str + " ".repeat(length - str.length);
+}
+
+function padLeft(value, length) {
+  const str = String(value || "");
+  if (str.length >= length) return str;
+  return " ".repeat(length - str.length) + str;
+}
+
+function buildLeaderboardTable(rankings, startRank = 1, limit = 5) {
+  const rows = rankings.slice(0, limit).map((entry, index) => {
+    const rankNumber = startRank + index;
+    const rank = rankNumber <= 5 ? `${medalForRank(rankNumber - 1)} ${rankNumber}` : `#${rankNumber}`;
+    const player = truncateName(displayName(entry), 18);
+    const season = formatNumber(entry.season);
+
+    return `${padRight(rank, 5)} | ${padRight(player, 18)} | ${padLeft(season, 9)}`;
+  });
+
+  return [
+    "RANK  | PLAYER             | SEASON",
+    "──────┼────────────────────┼──────────",
+    ...rows,
+  ].join("\n");
 }
 
 function buildMemberRankingEmbed(rankings, options = {}) {
@@ -36,7 +58,7 @@ function buildMemberRankingEmbed(rankings, options = {}) {
     .setTitle("🏆 XPRO SEASON LEADERBOARD")
     .setDescription(
       top.length
-        ? "**Top 5 Bullet Echo season contributors**\nKeep grinding. Every contribution helps the syndicate grow."
+        ? "**Top 5 Bullet Echo season contributors**\nRank → Player → Season score."
         : "No ranking data has been saved yet.",
     )
     .setFooter({ text: "XPRO Ranking System • Private leaderboard preview" })
@@ -51,33 +73,26 @@ function buildMemberRankingEmbed(rankings, options = {}) {
     return embed;
   }
 
-  const maxSeason = Math.max(...top.map((entry) => Number(entry.season || 0)), 0);
   const champion = top[0];
   const totalSeason = top.reduce((sum, entry) => sum + Number(entry.season || 0), 0);
 
-  embed.addFields({
-    name: "👑 Current Champion",
-    value: `${medalForRank(0)} **${truncateName(displayName(champion), 32)}**\n⭐ **${formatNumber(champion.season)}** season points`,
-    inline: false,
-  });
-
-  top.forEach((entry, index) => {
-    const score = Number(entry.season || 0);
-    embed.addFields({
-      name: `${medalForRank(index)} Rank #${index + 1}`,
-      value:
-        `**${truncateName(displayName(entry), 32)}**\n` +
-        `⭐ Season Score: **${formatNumber(score)}**\n` +
-        `${progressBar(score, maxSeason)}`,
+  embed.addFields(
+    {
+      name: "📋 Leaderboard Table",
+      value: `\`\`\`text\n${buildLeaderboardTable(top, 1, 5)}\n\`\`\``,
       inline: false,
-    });
-  });
-
-  embed.addFields({
-    name: "📊 Top 5 Total",
-    value: `**${formatNumber(totalSeason)}** season points`,
-    inline: false,
-  });
+    },
+    {
+      name: "👑 Season Champion",
+      value: `${medalForRank(0)} **${truncateName(displayName(champion), 32)}** — **${formatNumber(champion.season)}**`,
+      inline: false,
+    },
+    {
+      name: "📊 Top 5 Total",
+      value: `**${formatNumber(totalSeason)}** season points`,
+      inline: false,
+    },
+  );
 
   if (updatedBy) {
     embed.addFields({
@@ -99,7 +114,7 @@ function buildFullRankingEmbeds(rankings, options = {}) {
     return [
       new EmbedBuilder()
         .setColor(0xf1c40f)
-        .setTitle("📜 Full Season Ranking")
+        .setTitle("📜 FULL SEASON RANKING")
         .setDescription("No ranking data has been saved yet."),
     ];
   }
@@ -109,17 +124,11 @@ function buildFullRankingEmbeds(rankings, options = {}) {
     const page = Math.floor(start / pageSize) + 1;
     const totalPages = Math.ceil(entries.length / pageSize);
 
-    const lines = chunk.map((entry, index) => {
-      const rank = start + index + 1;
-      const rankLabel = String(rank).padStart(2, "0");
-      return `**#${rankLabel}** ${truncateName(displayName(entry), 24)} — ⭐ **${formatNumber(entry.season)}**`;
-    });
-
     pages.push(
       new EmbedBuilder()
         .setColor(0xf1c40f)
-        .setTitle("📜 Full Season Ranking")
-        .setDescription(lines.join("\n"))
+        .setTitle("📜 FULL SEASON RANKING")
+        .setDescription(`\`\`\`text\n${buildLeaderboardTable(chunk, start + 1, pageSize)}\n\`\`\``)
         .setFooter({ text: `Page ${page}/${totalPages} • ${entries.length} members` })
         .setTimestamp(),
     );
