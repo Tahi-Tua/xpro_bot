@@ -5,7 +5,7 @@ function formatNumber(value) {
 }
 
 function medalForRank(index) {
-  return ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][index] || `${index + 1}.`;
+  return ["🥇", "🥈", "🥉", "🏅", "🏅"][index] || "🏅";
 }
 
 function displayName(entry) {
@@ -14,16 +14,29 @@ function displayName(entry) {
     .trim();
 }
 
+function truncateName(value, maxLength = 28) {
+  const name = displayName({ displayName: value });
+  if (name.length <= maxLength) return name;
+  return `${name.slice(0, maxLength - 1)}…`;
+}
+
+function progressBar(value, maxValue) {
+  const total = 10;
+  if (!maxValue || maxValue <= 0) return "▱".repeat(total);
+  const filled = Math.max(1, Math.round((Number(value || 0) / maxValue) * total));
+  return "▰".repeat(Math.min(total, filled)) + "▱".repeat(Math.max(0, total - filled));
+}
+
 function buildMemberRankingEmbed(rankings, options = {}) {
   const top = Array.isArray(rankings) ? rankings.slice(0, 5) : [];
   const updatedBy = options.updatedBy || null;
 
   const embed = new EmbedBuilder()
-    .setColor(0xd4af37)
-    .setTitle("🏆 Season Leaderboard — Bullet Echo")
+    .setColor(0xf1c40f)
+    .setTitle("🏆 XPRO SEASON LEADERBOARD")
     .setDescription(
       top.length
-        ? "Keep grinding. Every contribution helps the syndicate grow."
+        ? "**Top 5 Bullet Echo season contributors**\nKeep grinding. Every contribution helps the syndicate grow."
         : "No ranking data has been saved yet.",
     )
     .setFooter({ text: "XPRO Ranking System • Private leaderboard preview" })
@@ -32,21 +45,33 @@ function buildMemberRankingEmbed(rankings, options = {}) {
   if (!top.length) {
     embed.addFields({
       name: "No data",
-      value: "Use `/ranking set` to add the first season scores.",
+      value: "Use `/ranking set` or `/ranking reload` to add the first season scores.",
       inline: false,
     });
     return embed;
   }
 
+  const maxSeason = Math.max(...top.map((entry) => Number(entry.season || 0)), 0);
+  const champion = top[0];
+  const totalSeason = top.reduce((sum, entry) => sum + Number(entry.season || 0), 0);
+
+  embed.addFields({
+    name: "👑 Current Champion",
+    value: `${medalForRank(0)} **${truncateName(displayName(champion), 32)}**\n⭐ **${formatNumber(champion.season)}** season points`,
+    inline: false,
+  });
+
   top.forEach((entry, index) => {
+    const score = Number(entry.season || 0);
     embed.addFields({
       name: `${medalForRank(index)} Rank #${index + 1}`,
-      value: `**${displayName(entry)}**\n⭐ Season Score: **${formatNumber(entry.season)}**`,
+      value:
+        `**${truncateName(displayName(entry), 32)}**\n` +
+        `⭐ Season Score: **${formatNumber(score)}**\n` +
+        `${progressBar(score, maxSeason)}`,
       inline: false,
     });
   });
-
-  const totalSeason = top.reduce((sum, entry) => sum + Number(entry.season || 0), 0);
 
   embed.addFields({
     name: "📊 Top 5 Total",
@@ -65,7 +90,46 @@ function buildMemberRankingEmbed(rankings, options = {}) {
   return embed;
 }
 
+function buildFullRankingEmbeds(rankings, options = {}) {
+  const entries = Array.isArray(rankings) ? rankings : [];
+  const pageSize = options.pageSize || 10;
+  const pages = [];
+
+  if (!entries.length) {
+    return [
+      new EmbedBuilder()
+        .setColor(0xf1c40f)
+        .setTitle("📜 Full Season Ranking")
+        .setDescription("No ranking data has been saved yet."),
+    ];
+  }
+
+  for (let start = 0; start < entries.length; start += pageSize) {
+    const chunk = entries.slice(start, start + pageSize);
+    const page = Math.floor(start / pageSize) + 1;
+    const totalPages = Math.ceil(entries.length / pageSize);
+
+    const lines = chunk.map((entry, index) => {
+      const rank = start + index + 1;
+      const rankLabel = String(rank).padStart(2, "0");
+      return `**#${rankLabel}** ${truncateName(displayName(entry), 24)} — ⭐ **${formatNumber(entry.season)}**`;
+    });
+
+    pages.push(
+      new EmbedBuilder()
+        .setColor(0xf1c40f)
+        .setTitle("📜 Full Season Ranking")
+        .setDescription(lines.join("\n"))
+        .setFooter({ text: `Page ${page}/${totalPages} • ${entries.length} members` })
+        .setTimestamp(),
+    );
+  }
+
+  return pages.slice(0, 10);
+}
+
 module.exports = {
+  buildFullRankingEmbeds,
   buildMemberRankingEmbed,
   formatNumber,
 };
