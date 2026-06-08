@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const fs = require("fs").promises;
+const https = require("https");
 const path = require("path");
 const { SlashCommandBuilder, MessageFlags, PermissionFlagsBits } = require("discord.js");
 const {
@@ -16,6 +17,7 @@ const {
 const { buildMemberRankingEmbed, formatNumber } = require("../../utils/memberRankingEmbed");
 
 const ROSTER_PATH = process.env.MEMBER_RANKING_ROSTER_FILE || path.join(__dirname, "..", "..", "data", "memberRankingRoster.json");
+const ROSTER_URL = process.env.MEMBER_RANKING_ROSTER_URL || "https://raw.githubusercontent.com/Tahi-Tua/xpro_bot/main/data/memberRankingRoster.json";
 
 function canManageRankings(interaction) {
   const roles = interaction.member?.roles?.cache;
@@ -48,6 +50,41 @@ function toSafeScore(value) {
   return Math.max(0, Math.floor(number));
 }
 
+function readHttpsText(url) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, { timeout: 10000 }, (response) => {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        response.resume();
+        reject(new Error(`HTTP ${response.statusCode}`));
+        return;
+      }
+
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => {
+        body += chunk;
+      });
+      response.on("end", () => resolve(body));
+    });
+
+    request.on("timeout", () => {
+      request.destroy(new Error("Request timed out"));
+    });
+    request.on("error", reject);
+  });
+}
+
+function extractRosterMembers(raw) {
+  const parsed = JSON.parse(raw || "{}");
+  const members = Array.isArray(parsed) ? parsed : parsed.members;
+
+  if (!Array.isArray(members)) {
+    throw new Error("memberRankingRoster.json must contain a members array.");
+  }
+
+  return members;
+}
+
 async function createRosterTemplate() {
   const template = {
     members: [
@@ -65,35 +102,42 @@ async function createRosterTemplate() {
 }
 
 async function loadRankingRoster() {
-  let raw;
-
   try {
-    raw = await fs.readFile(ROSTER_PATH, "utf8");
-  } catch (err) {
-    if (err.code === "ENOENT") {
-      await createRosterTemplate();
-      throw new Error(`Roster file was missing, so a template was created at ${ROSTER_PATH}. Add your members/scores, redeploy if needed, then run /ranking reload again.`);
+    const raw = await readHttpsText(ROSTER_URL);
+    return {
+      members: extractRosterMembers(raw),
+      source: "GitHub raw roster",
+    };
+  } catch (remoteErr) {
+    let raw;
+
+    try {
+      raw = await fs.readFile(ROSTER_PATH, "utf8");
+    } catch (localErr) {
+      if (localErr.code === "ENOENT") {
+        await createRosterTemplate();
+        throw new Error(
+          `Remote roster failed (${remoteErr.message}) and local roster was missing. ` +
+            `A template was created at ${ROSTER_PATH}.`,
+        );
+      }
+
+      throw localErr;
     }
 
-    throw err;
+    return {
+      members: extractRosterMembers(raw),
+      source: "local roster fallback",
+    };
   }
-
-  const parsed = JSON.parse(raw || "{}");
-  const members = Array.isArray(parsed) ? parsed : parsed.members;
-
-  if (!Array.isArray(members)) {
-    throw new Error("memberRankingRoster.json must contain a members array.");
-  }
-
-  return members;
 }
 
 async function reloadRankingRoster(updatedBy) {
-  const members = await loadRankingRoster();
+  const roster = await loadRankingRoster();
   let loaded = 0;
   let skipped = 0;
 
-  for (const entry of members) {
+  for (const entry of roster.members) {
     const displayName = normalizePlayerName(entry.name || entry.displayName || entry.member);
     if (!displayName) {
       skipped += 1;
@@ -113,7 +157,7 @@ async function reloadRankingRoster(updatedBy) {
     loaded += 1;
   }
 
-  return { loaded, skipped };
+  return { loaded, skipped, source: roster.source };
 }
 
 async function enrichRankingsWithGuildMembers(guild, rankings) {
@@ -269,7 +313,7 @@ module.exports = {
       try {
         const result = await reloadRankingRoster(interaction.user.id);
         return interaction.editReply(
-          `✅ Ranking roster reloaded from JSON.\nLoaded: **${result.loaded}**\nSkipped: **${result.skipped}**`,
+          `✅ Ranking roster reloaded from JSON.\nSource: **${result.source}**\nLoaded: **${result.loaded}**\nSkipped: **${result.skipped}**`,
         );
       } catch (err) {
         return interaction.editReply(`❌ Could not reload ranking roster: ${err.message}`);
