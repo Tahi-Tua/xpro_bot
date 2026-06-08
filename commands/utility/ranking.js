@@ -1,4 +1,6 @@
 const crypto = require("crypto");
+const fs = require("fs").promises;
+const path = require("path");
 const { SlashCommandBuilder, MessageFlags, PermissionFlagsBits } = require("discord.js");
 const {
   LEADER_ROLE_ID,
@@ -12,6 +14,8 @@ const {
   upsertMemberRanking,
 } = require("../../utils/memberRankingStore");
 const { buildMemberRankingEmbed, formatNumber } = require("../../utils/memberRankingEmbed");
+
+const ROSTER_PATH = process.env.MEMBER_RANKING_ROSTER_FILE || path.join(__dirname, "..", "..", "data", "memberRankingRoster.json");
 
 function canManageRankings(interaction) {
   const roles = interaction.member?.roles?.cache;
@@ -36,6 +40,52 @@ function playerKeyFromName(name) {
 
 function displayNameFromEntry(entry) {
   return entry.displayName || entry.tag || entry.userId;
+}
+
+function toSafeScore(value) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.floor(number));
+}
+
+async function loadRankingRoster() {
+  const raw = await fs.readFile(ROSTER_PATH, "utf8");
+  const parsed = JSON.parse(raw || "{}");
+  const members = Array.isArray(parsed) ? parsed : parsed.members;
+
+  if (!Array.isArray(members)) {
+    throw new Error("memberRankingRoster.json must contain a members array.");
+  }
+
+  return members;
+}
+
+async function reloadRankingRoster(updatedBy) {
+  const members = await loadRankingRoster();
+  let loaded = 0;
+  let skipped = 0;
+
+  for (const entry of members) {
+    const displayName = normalizePlayerName(entry.name || entry.displayName || entry.member);
+    if (!displayName) {
+      skipped += 1;
+      continue;
+    }
+
+    await upsertMemberRanking({
+      userId: playerKeyFromName(displayName),
+      tag: displayName,
+      displayName,
+      weekly: toSafeScore(entry.weekly),
+      season: toSafeScore(entry.season),
+      dailyXp: toSafeScore(entry.dailyXp ?? entry.daily_xp),
+      updatedBy,
+    });
+
+    loaded += 1;
+  }
+
+  return { loaded, skipped };
 }
 
 async function enrichRankingsWithGuildMembers(guild, rankings) {
@@ -101,6 +151,11 @@ module.exports = {
             .setMinValue(0)
             .setRequired(false),
         ),
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("reload")
+        .setDescription("Reload ranking scores from data/memberRankingRoster.json."),
     )
     .addSubcommand((subcommand) =>
       subcommand
@@ -178,6 +233,19 @@ module.exports = {
         content: `✅ Ranking updated for **${displayName}**.\nSeason score: **${formatNumber(season)}**`,
         flags: MessageFlags.Ephemeral,
       });
+    }
+
+    if (subcommand === "reload") {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+      try {
+        const result = await reloadRankingRoster(interaction.user.id);
+        return interaction.editReply(
+          `✅ Ranking roster reloaded from JSON.\nLoaded: **${result.loaded}**\nSkipped: **${result.skipped}**`,
+        );
+      } catch (err) {
+        return interaction.editReply(`❌ Could not reload ranking roster: ${err.message}`);
+      }
     }
 
     if (subcommand === "publish") {
