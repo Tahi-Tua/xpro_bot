@@ -13,7 +13,8 @@ const {
   setPublishedMessageId,
   upsertMemberRanking,
 } = require("../../utils/memberRankingStore");
-const { buildMemberRankingEmbed, formatNumber } = require("../../utils/memberRankingEmbed");
+const { formatNumber } = require("../../utils/memberRankingEmbed");
+const { buildMemberRankingImage } = require("../../utils/memberRankingImage");
 
 function canManageRankings(interaction) {
   const roles = interaction.member?.roles?.cache;
@@ -24,12 +25,16 @@ function canManageRankings(interaction) {
   );
 }
 
+function displayNameFromEntry(entry) {
+  return entry.displayName || entry.tag || entry.userId;
+}
+
 function rankingSummary(rankings) {
   if (!rankings.length) return "No rankings saved.";
   return rankings
     .slice(0, 10)
     .map((entry, index) => {
-      return `${index + 1}. <@${entry.userId}> — score **${formatNumber(entry.score)}** | weekly ${formatNumber(entry.weekly)} | season ${formatNumber(entry.season)} | daily XP ${formatNumber(entry.dailyXp)}`;
+      return `${index + 1}. **${displayNameFromEntry(entry)}** — season **${formatNumber(entry.season)}**`;
     })
     .join("\n");
 }
@@ -43,18 +48,24 @@ async function publishRanking(interaction) {
   }
 
   const top = getTopRankings(5);
-  const embed = buildMemberRankingEmbed(top, { updatedBy: `${interaction.user.tag}` });
+  const attachment = await buildMemberRankingImage(top);
   const publishedMessageId = getPublishedMessageId();
+  const payload = {
+    content: "🏆 **Season Leaderboard — Bullet Echo**",
+    embeds: [],
+    files: [attachment],
+    allowedMentions: { parse: [] },
+  };
 
   if (publishedMessageId) {
     const oldMessage = await channel.messages.fetch(publishedMessageId).catch(() => null);
     if (oldMessage) {
-      await oldMessage.edit({ embeds: [embed] });
+      await oldMessage.edit({ ...payload, attachments: [] });
       return { ok: true, updated: true, messageId: oldMessage.id, channel };
     }
   }
 
-  const message = await channel.send({ embeds: [embed] });
+  const message = await channel.send(payload);
   await setPublishedMessageId(message.id);
   return { ok: true, updated: false, messageId: message.id, channel };
 }
@@ -103,7 +114,7 @@ module.exports = {
     .addSubcommand((subcommand) =>
       subcommand
         .setName("publish")
-        .setDescription("Publish or update the ranking embed in the rankings channel."),
+        .setDescription("Publish or update the ranking image in the rankings channel."),
     )
     .addSubcommand((subcommand) =>
       subcommand
@@ -132,8 +143,13 @@ module.exports = {
     const subcommand = interaction.options.getSubcommand();
 
     if (subcommand === "show") {
-      const embed = buildMemberRankingEmbed(getTopRankings(5));
-      return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+      const attachment = await buildMemberRankingImage(getTopRankings(5));
+      return interaction.reply({
+        content: rankingSummary(getTopRankings(5)),
+        files: [attachment],
+        flags: MessageFlags.Ephemeral,
+        allowedMentions: { parse: [] },
+      });
     }
 
     if (!canManageRankings(interaction)) {
@@ -144,14 +160,18 @@ module.exports = {
     }
 
     if (subcommand === "set") {
-      const member = interaction.options.getUser("member");
+      const user = interaction.options.getUser("member");
+      const guildMember = interaction.options.getMember("member") ||
+        await interaction.guild.members.fetch(user.id).catch(() => null);
+      const displayName = guildMember?.displayName || user.globalName || user.username || user.tag;
       const weekly = interaction.options.getInteger("weekly");
       const season = interaction.options.getInteger("season");
       const dailyXp = interaction.options.getInteger("daily_xp") || 0;
 
       await upsertMemberRanking({
-        userId: member.id,
-        tag: member.tag,
+        userId: user.id,
+        tag: user.tag,
+        displayName,
         weekly,
         season,
         dailyXp,
@@ -159,7 +179,7 @@ module.exports = {
       });
 
       return interaction.reply({
-        content: `✅ Ranking updated for **${member.tag}**.\nScore total: **${formatNumber(weekly + season + dailyXp)}**`,
+        content: `✅ Ranking updated for **${displayName}**.\nSeason score: **${formatNumber(season)}**`,
         flags: MessageFlags.Ephemeral,
       });
     }
@@ -173,19 +193,19 @@ module.exports = {
 
       return interaction.editReply(
         result.updated
-          ? `✅ Ranking message updated in ${result.channel}.`
-          : `✅ Ranking message published in ${result.channel}.`,
+          ? `✅ Ranking image updated in ${result.channel}.`
+          : `✅ Ranking image published in ${result.channel}.`,
       );
     }
 
     if (subcommand === "remove") {
-      const member = interaction.options.getUser("member");
-      const removed = await removeMemberRanking(member.id);
+      const user = interaction.options.getUser("member");
+      const removed = await removeMemberRanking(user.id);
 
       return interaction.reply({
         content: removed
-          ? `✅ **${member.tag}** removed from rankings.`
-          : `ℹ️ **${member.tag}** was not present in rankings.`,
+          ? `✅ **${user.tag}** removed from rankings.`
+          : `ℹ️ **${user.tag}** was not present in rankings.`,
         flags: MessageFlags.Ephemeral,
       });
     }
@@ -210,6 +230,7 @@ module.exports = {
     return interaction.reply({
       content: rankingSummary(getAllRankings()),
       flags: MessageFlags.Ephemeral,
+      allowedMentions: { parse: [] },
     });
   },
 };
