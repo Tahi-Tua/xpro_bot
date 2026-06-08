@@ -14,12 +14,11 @@ async function getBrowser() {
         "--disable-dev-shm-usage",
         "--disable-gpu",
         "--no-zygote",
-        "--single-process",
       ],
       defaultViewport: {
         width: 1080,
         height: 1920,
-        deviceScaleFactor: 1,
+        deviceScaleFactor: 2,
       },
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || await chromium.executablePath(),
       headless: chromium.headless,
@@ -41,18 +40,24 @@ async function buildLeaderboardScreenshotBuffer(options = {}) {
   const page = await browser.newPage();
 
   try {
+    page.on("console", (msg) => console.log(`[leaderboard page] ${msg.text()}`));
+    page.on("pageerror", (err) => console.error("[leaderboard page error]", err.message));
+
     await page.setViewport({
       width: 1080,
       height: 1920,
-      deviceScaleFactor: 1,
+      deviceScaleFactor: 2,
     });
 
     await page.goto(pageUrl, {
-      waitUntil: "networkidle0",
+      waitUntil: "domcontentloaded",
       timeout: 30000,
     });
 
-    await page.evaluate(() => document.fonts && document.fonts.ready);
+    await page.evaluate(async () => {
+      if (window.__leaderboardReady) await window.__leaderboardReady;
+      if (document.fonts?.ready) await document.fonts.ready;
+    });
 
     const element = await page.$("#leaderboardCanvas");
     if (!element) {
