@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const { SlashCommandBuilder, MessageFlags, PermissionFlagsBits } = require("discord.js");
 const {
   LEADER_ROLE_ID,
@@ -21,6 +22,18 @@ function canManageRankings(interaction) {
   );
 }
 
+function normalizePlayerName(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function playerKeyFromName(name) {
+  const normalized = normalizePlayerName(name).toLowerCase();
+  const hash = crypto.createHash("sha1").update(normalized).digest("hex").slice(0, 16);
+  return `player:${hash}`;
+}
+
 function displayNameFromEntry(entry) {
   return entry.displayName || entry.tag || entry.userId;
 }
@@ -28,6 +41,8 @@ function displayNameFromEntry(entry) {
 async function enrichRankingsWithGuildMembers(guild, rankings) {
   return Promise.all(
     rankings.map(async (entry) => {
+      if (!/^\d{15,25}$/.test(String(entry.userId || ""))) return entry;
+
       const member = await guild.members.fetch(entry.userId).catch(() => null);
       if (!member) return entry;
 
@@ -56,11 +71,13 @@ module.exports = {
     .addSubcommand((subcommand) =>
       subcommand
         .setName("set")
-        .setDescription("Set or update a member ranking score.")
-        .addUserOption((option) =>
+        .setDescription("Set or update a player ranking score.")
+        .addStringOption((option) =>
           option
             .setName("member")
-            .setDescription("Discord member to rank.")
+            .setDescription("Player display name, even if they are not on Discord.")
+            .setMinLength(1)
+            .setMaxLength(40)
             .setRequired(true),
         )
         .addIntegerOption((option) =>
@@ -98,11 +115,13 @@ module.exports = {
     .addSubcommand((subcommand) =>
       subcommand
         .setName("remove")
-        .setDescription("Remove a member from rankings.")
-        .addUserOption((option) =>
+        .setDescription("Remove a player from rankings.")
+        .addStringOption((option) =>
           option
             .setName("member")
-            .setDescription("Discord member to remove.")
+            .setDescription("Player display name to remove.")
+            .setMinLength(1)
+            .setMaxLength(40)
             .setRequired(true),
         ),
     )
@@ -139,17 +158,15 @@ module.exports = {
     }
 
     if (subcommand === "set") {
-      const user = interaction.options.getUser("member");
-      const guildMember = interaction.options.getMember("member") ||
-        await interaction.guild.members.fetch(user.id).catch(() => null);
-      const displayName = guildMember?.displayName || user.globalName || user.username || user.tag;
+      const displayName = normalizePlayerName(interaction.options.getString("member"));
       const weekly = interaction.options.getInteger("weekly");
       const season = interaction.options.getInteger("season");
       const dailyXp = interaction.options.getInteger("daily_xp") || 0;
+      const playerId = playerKeyFromName(displayName);
 
       await upsertMemberRanking({
-        userId: user.id,
-        tag: user.tag,
+        userId: playerId,
+        tag: displayName,
         displayName,
         weekly,
         season,
@@ -177,13 +194,14 @@ module.exports = {
     }
 
     if (subcommand === "remove") {
-      const user = interaction.options.getUser("member");
-      const removed = await removeMemberRanking(user.id);
+      const displayName = normalizePlayerName(interaction.options.getString("member"));
+      const playerId = playerKeyFromName(displayName);
+      const removed = await removeMemberRanking(playerId);
 
       return interaction.reply({
         content: removed
-          ? `✅ **${user.tag}** removed from rankings.`
-          : `ℹ️ **${user.tag}** was not present in rankings.`,
+          ? `✅ **${displayName}** removed from rankings.`
+          : `ℹ️ **${displayName}** was not present in rankings.`,
         flags: MessageFlags.Ephemeral,
       });
     }
