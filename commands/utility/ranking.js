@@ -1,20 +1,16 @@
 const { SlashCommandBuilder, MessageFlags, PermissionFlagsBits } = require("discord.js");
 const {
   LEADER_ROLE_ID,
-  MEMBER_RANKINGS_CHANNEL_ID,
   STAFF_ROLE_ID,
 } = require("../../config/channels");
 const {
   getAllRankings,
-  getPublishedMessageId,
   getTopRankings,
   removeMemberRanking,
   resetRankings,
-  setPublishedMessageId,
   upsertMemberRanking,
 } = require("../../utils/memberRankingStore");
-const { formatNumber } = require("../../utils/memberRankingEmbed");
-const { buildMemberRankingImage } = require("../../utils/memberRankingImage");
+const { buildMemberRankingEmbed, formatNumber } = require("../../utils/memberRankingEmbed");
 
 function canManageRankings(interaction) {
   const roles = interaction.member?.roles?.cache;
@@ -29,6 +25,20 @@ function displayNameFromEntry(entry) {
   return entry.displayName || entry.tag || entry.userId;
 }
 
+async function enrichRankingsWithGuildMembers(guild, rankings) {
+  return Promise.all(
+    rankings.map(async (entry) => {
+      const member = await guild.members.fetch(entry.userId).catch(() => null);
+      if (!member) return entry;
+
+      return {
+        ...entry,
+        displayName: member.displayName || entry.displayName || entry.tag,
+      };
+    }),
+  );
+}
+
 function rankingSummary(rankings) {
   if (!rankings.length) return "No rankings saved.";
   return rankings
@@ -37,37 +47,6 @@ function rankingSummary(rankings) {
       return `${index + 1}. **${displayNameFromEntry(entry)}** — season **${formatNumber(entry.season)}**`;
     })
     .join("\n");
-}
-
-async function publishRanking(interaction) {
-  const channel = interaction.guild.channels.cache.get(MEMBER_RANKINGS_CHANNEL_ID) ||
-    await interaction.guild.channels.fetch(MEMBER_RANKINGS_CHANNEL_ID).catch(() => null);
-
-  if (!channel?.isTextBased?.()) {
-    return { ok: false, error: `Ranking channel not found or not text-based: ${MEMBER_RANKINGS_CHANNEL_ID}` };
-  }
-
-  const top = getTopRankings(5);
-  const attachment = await buildMemberRankingImage(top);
-  const publishedMessageId = getPublishedMessageId();
-  const payload = {
-    content: "🏆 **Season Leaderboard — Bullet Echo**",
-    embeds: [],
-    files: [attachment],
-    allowedMentions: { parse: [] },
-  };
-
-  if (publishedMessageId) {
-    const oldMessage = await channel.messages.fetch(publishedMessageId).catch(() => null);
-    if (oldMessage) {
-      await oldMessage.edit({ ...payload, attachments: [] });
-      return { ok: true, updated: true, messageId: oldMessage.id, channel };
-    }
-  }
-
-  const message = await channel.send(payload);
-  await setPublishedMessageId(message.id);
-  return { ok: true, updated: false, messageId: message.id, channel };
 }
 
 module.exports = {
@@ -109,12 +88,12 @@ module.exports = {
     .addSubcommand((subcommand) =>
       subcommand
         .setName("show")
-        .setDescription("Show the current Top 5 ranking."),
+        .setDescription("Show the current Top 5 ranking privately."),
     )
     .addSubcommand((subcommand) =>
       subcommand
         .setName("publish")
-        .setDescription("Publish or update the ranking image in the rankings channel."),
+        .setDescription("Generate a private ranking preview for manual reposting."),
     )
     .addSubcommand((subcommand) =>
       subcommand
@@ -143,10 +122,10 @@ module.exports = {
     const subcommand = interaction.options.getSubcommand();
 
     if (subcommand === "show") {
-      const attachment = await buildMemberRankingImage(getTopRankings(5));
+      const top = await enrichRankingsWithGuildMembers(interaction.guild, getTopRankings(5));
+      const embed = buildMemberRankingEmbed(top, { updatedBy: interaction.user.tag });
       return interaction.reply({
-        content: rankingSummary(getTopRankings(5)),
-        files: [attachment],
+        embeds: [embed],
         flags: MessageFlags.Ephemeral,
         allowedMentions: { parse: [] },
       });
@@ -186,16 +165,15 @@ module.exports = {
 
     if (subcommand === "publish") {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const result = await publishRanking(interaction);
-      if (!result.ok) {
-        return interaction.editReply(`❌ ${result.error}`);
-      }
-
-      return interaction.editReply(
-        result.updated
-          ? `✅ Ranking image updated in ${result.channel}.`
-          : `✅ Ranking image published in ${result.channel}.`,
-      );
+      const top = await enrichRankingsWithGuildMembers(interaction.guild, getTopRankings(5));
+      const embed = buildMemberRankingEmbed(top, { updatedBy: interaction.user.tag });
+      return interaction.editReply({
+        content:
+          "🏆 **Private Season Leaderboard Preview**\n" +
+          "Copy or screenshot this preview, then repost it manually wherever you want.",
+        embeds: [embed],
+        allowedMentions: { parse: [] },
+      });
     }
 
     if (subcommand === "remove") {
