@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs").promises;
 const https = require("https");
 const path = require("path");
-const { SlashCommandBuilder, MessageFlags, PermissionFlagsBits } = require("discord.js");
+const { AttachmentBuilder, SlashCommandBuilder, MessageFlags, PermissionFlagsBits } = require("discord.js");
 const {
   LEADER_ROLE_ID,
   STAFF_ROLE_ID,
@@ -19,6 +19,7 @@ const {
   buildMemberRankingEmbed,
   formatNumber,
 } = require("../../utils/memberRankingEmbed");
+const { buildScoreboardSvgBuffer } = require("../../utils/memberRankingBoard");
 
 const ROSTER_PATH = process.env.MEMBER_RANKING_ROSTER_FILE || path.join(__dirname, "..", "..", "data", "memberRankingRoster.json");
 const ROSTER_URL = process.env.MEMBER_RANKING_ROSTER_URL || "https://raw.githubusercontent.com/Tahi-Tua/xpro_bot/main/data/memberRankingRoster.json";
@@ -250,6 +251,11 @@ module.exports = {
     )
     .addSubcommand((subcommand) =>
       subcommand
+        .setName("board")
+        .setDescription("Send the complete scoreboard as an image."),
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
         .setName("publish")
         .setDescription("Generate a private ranking preview for manual reposting."),
     )
@@ -298,6 +304,20 @@ module.exports = {
         content: subcommand === "web" ? "🏆 **XPRO Season Scoreboard**\nTableau complet : **Rank | Nom | Score saisonnier**" : null,
         embeds,
         flags: MessageFlags.Ephemeral,
+        allowedMentions: { parse: [] },
+      });
+    }
+
+    if (subcommand === "board") {
+      await interaction.deferReply();
+      const allRankings = await enrichRankingsWithGuildMembers(interaction.guild, getAllRankings());
+      const attachment = new AttachmentBuilder(buildScoreboardSvgBuffer(allRankings), {
+        name: "xpro-scoreboard.svg",
+      });
+
+      return interaction.editReply({
+        content: "🏆 **Tableau de Score XPRO**",
+        files: [attachment],
         allowedMentions: { parse: [] },
       });
     }
