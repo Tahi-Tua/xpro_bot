@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>XPRO Season Scoreboard</title>
+  <style>
+    :root {
+      --bg-1: #070a12;
+      --bg-2: #101827;
+      --card: rgba(18, 28, 47, 0.86);
+      --card-2: rgba(255, 255, 255, 0.06);
+      --gold: #f4c542;
+      --gold-soft: rgba(244, 197, 66, 0.18);
+      --silver: #d7dde8;
+      --bronze: #d4935f;
+      --text: #f6f8ff;
+      --muted: #aab4ca;
+      --line: rgba(255, 255, 255, 0.12);
+      --success: #4ade80;
+      --danger: #fb7185;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(244, 197, 66, 0.18), transparent 32rem),
+        radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.16), transparent 30rem),
+        linear-gradient(135deg, var(--bg-1), var(--bg-2));
+      padding: 24px;
+    }
+
+    .wrap {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 20px;
+      align-items: end;
+      margin-bottom: 22px;
+    }
+
+    .eyebrow {
+      color: var(--gold);
+      font-weight: 800;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      font-size: 0.8rem;
+      margin-bottom: 8px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2rem, 6vw, 4.4rem);
+      line-height: 0.95;
+      letter-spacing: -0.06em;
+      text-transform: uppercase;
+    }
+
+    .subtitle {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: clamp(0.95rem, 2vw, 1.08rem);
+    }
+
+    .stats {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .stat {
+      min-width: 145px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    .stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .stat strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 1.35rem;
+    }
+
+    .podium {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin: 22px 0;
+    }
+
+    .podium-card {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 20px;
+      background: linear-gradient(160deg, rgba(255,255,255,0.10), rgba(255,255,255,0.035));
+      box-shadow: var(--shadow);
+    }
+
+    .podium-card::before {
+      content: "";
+      position: absolute;
+      inset: -60% auto auto -20%;
+      width: 200px;
+      height: 200px;
+      background: var(--gold-soft);
+      filter: blur(12px);
+      border-radius: 50%;
+    }
+
+    .podium-rank {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: rgba(0, 0, 0, 0.28);
+      font-size: 1.3rem;
+      margin-bottom: 14px;
+    }
+
+    .podium-name {
+      position: relative;
+      margin: 0 0 8px;
+      font-weight: 900;
+      font-size: 1.15rem;
+      line-height: 1.2;
+      word-break: break-word;
+    }
+
+    .podium-score {
+      position: relative;
+      color: var(--gold);
+      font-size: 1.6rem;
+      font-weight: 900;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .search {
+      width: min(420px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(0, 0, 0, 0.22);
+      color: var(--text);
+      padding: 12px 14px;
+      outline: none;
+      font-size: 1rem;
+    }
+
+    .search:focus { border-color: rgba(244, 197, 66, 0.65); }
+
+    .updated {
+      color: var(--muted);
+      font-size: 0.9rem;
+      white-space: nowrap;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead th {
+      color: var(--muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      text-align: left;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    tbody tr {
+      transition: 0.2s ease;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    tbody tr:hover {
+      background: rgba(244, 197, 66, 0.08);
+    }
+
+    td {
+      padding: 16px 18px;
+      vertical-align: middle;
+    }
+
+    .rank {
+      width: 95px;
+      font-weight: 900;
+      color: var(--gold);
+      white-space: nowrap;
+    }
+
+    .name {
+      font-weight: 800;
+      word-break: break-word;
+    }
+
+    .score {
+      width: 180px;
+      text-align: right;
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(244, 197, 66, 0.12);
+      border: 1px solid rgba(244, 197, 66, 0.25);
+    }
+
+    .error {
+      margin-top: 18px;
+      padding: 16px;
+      border-radius: 16px;
+      background: rgba(251, 113, 133, 0.12);
+      border: 1px solid rgba(251, 113, 133, 0.35);
+      color: #fecdd3;
+      display: none;
+    }
+
+    .footer {
+      padding: 18px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 780px) {
+      body { padding: 14px; }
+      .hero { grid-template-columns: 1fr; }
+      .stats { justify-content: stretch; }
+      .stat { flex: 1; min-width: 130px; }
+      .podium { grid-template-columns: 1fr; }
+      .toolbar { flex-direction: column; align-items: stretch; }
+      .updated { white-space: normal; }
+      thead { display: none; }
+      table, tbody, tr, td { display: block; width: 100%; }
+      tbody tr {
+        margin: 12px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: rgba(255,255,255,0.045);
+      }
+      td { padding: 6px 0; }
+      td::before {
+        display: block;
+        color: var(--muted);
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      }
+      td.rank::before { content: "Rank"; }
+      td.name::before { content: "Nom"; }
+      td.score::before { content: "Score"; }
+      .score { text-align: left; font-size: 1.35rem; color: var(--gold); }
+      .rank { font-size: 1.15rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">Bullet Echo • XPRO</div>
+        <h1>Season<br />Scoreboard</h1>
+        <p class="subtitle">Classement complet des 36 membres — Rank, Nom, Score saisonnier.</p>
+      </div>
+      <div class="stats">
+        <div class="stat"><span>Membres</span><strong id="memberCount">0</strong></div>
+        <div class="stat"><span>Top Score</span><strong id="topScore">0</strong></div>
+        <div class="stat"><span>Total</span><strong id="totalScore">0</strong></div>
+      </div>
+    </section>
+
+    <section class="podium" id="podium"></section>
+
+    <section class="panel">
+      <div class="toolbar">
+        <input id="search" class="search" type="search" placeholder="Rechercher un membre..." />
+        <div class="updated" id="updated">Chargement du classement...</div>
+      </div>
+      <table aria-label="Tableau de score XPRO">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Nom</th>
+            <th style="text-align:right">Score saisonnier</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="footer">XPRO Ranking System • Responsive HTML/CSS/JS scoreboard</div>
+    </section>
+
+    <div class="error" id="error"></div>
+  </main>
+
+  <script>
+    const ROSTER_URL = "https://raw.githubusercontent.com/Tahi-Tua/xpro_bot/main/data/memberRankingRoster.json";
+    const podium = document.getElementById("podium");
+    const rows = document.getElementById("rows");
+    const search = document.getElementById("search");
+    const error = document.getElementById("error");
+    const updated = document.getElementById("updated");
+    const memberCount = document.getElementById("memberCount");
+    const topScore = document.getElementById("topScore");
+    const totalScore = document.getElementById("totalScore");
+
+    let ranking = [];
+
+    function formatNumber(value) {
+      return Number(value || 0).toLocaleString("fr-FR");
+    }
+
+    function medal(rank) {
+      if (rank === 1) return "🥇";
+      if (rank === 2) return "🥈";
+      if (rank === 3) return "🥉";
+      return `#${rank}`;
+    }
+
+    function normalizeMember(member) {
+      return {
+        name: String(member.name || member.displayName || member.member || "Unknown").trim(),
+        score: Number(member.season || member.score || 0),
+      };
+    }
+
+    function renderPodium(items) {
+      podium.innerHTML = items.slice(0, 3).map((item, index) => {
+        const rank = index + 1;
+        return `
+          <article class="podium-card">
+            <div class="podium-rank">${medal(rank)}</div>
+            <h2 class="podium-name">${escapeHtml(item.name)}</h2>
+            <div class="podium-score">${formatNumber(item.score)}</div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderRows(items) {
+      rows.innerHTML = items.map((item, index) => {
+        const rank = ranking.findIndex((player) => player.name === item.name && player.score === item.score) + 1;
+        return `
+          <tr>
+            <td class="rank"><span class="badge">${medal(rank)}</span></td>
+            <td class="name">${escapeHtml(item.name)}</td>
+            <td class="score">${formatNumber(item.score)}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function render(items = ranking) {
+      renderPodium(ranking);
+      renderRows(items);
+      memberCount.textContent = formatNumber(ranking.length);
+      topScore.textContent = formatNumber(ranking[0]?.score || 0);
+      totalScore.textContent = formatNumber(ranking.reduce((sum, item) => sum + item.score, 0));
+      updated.textContent = `Dernière mise à jour : ${new Date().toLocaleString("fr-FR")}`;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    async function loadRanking() {
+      try {
+        const response = await fetch(`${ROSTER_URL}?t=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const members = Array.isArray(data) ? data : data.members;
+        if (!Array.isArray(members)) throw new Error("Format JSON invalide : members[] introuvable.");
+
+        ranking = members
+          .map(normalizeMember)
+          .filter((member) => member.name)
+          .sort((a, b) => b.score - a.score);
+
+        render();
+      } catch (err) {
+        error.style.display = "block";
+        error.textContent = `Erreur chargement classement : ${err.message}`;
+        updated.textContent = "Classement indisponible";
+      }
+    }
+
+    search.addEventListener("input", () => {
+      const query = search.value.trim().toLowerCase();
+      const filtered = query
+        ? ranking.filter((item) => item.name.toLowerCase().includes(query))
+        : ranking;
+      renderRows(filtered);
+    });
+
+    loadRanking();
+  </script>
+</body>
+</html>
