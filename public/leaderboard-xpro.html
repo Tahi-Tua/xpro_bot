@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>XPRO Leaderboard</title>
+  <style>
+    :root {
+      --text: #ffffff;
+      --muted: rgba(255, 255, 255, 0.72);
+      --cyan: #38d8ff;
+      --gold: #ffd75a;
+      --row: rgba(15, 23, 42, 0.72);
+      --row-soft: rgba(30, 41, 59, 0.62);
+      --stroke: rgba(255, 255, 255, 0.10);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      background: #050914;
+      color: var(--text);
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .leaderboard-canvas {
+      position: relative;
+      width: min(1080px, 100%);
+      min-height: 1920px;
+      overflow: hidden;
+      border-radius: 34px;
+      background:
+        linear-gradient(rgba(5, 9, 20, 0.26), rgba(5, 9, 20, 0.72)),
+        url("./assets/xpro-leaderboard-bg.png") center / cover no-repeat,
+        radial-gradient(circle at 20% 0%, rgba(56, 216, 255, 0.22), transparent 34%),
+        radial-gradient(circle at 85% 100%, rgba(255, 215, 90, 0.12), transparent 34%),
+        linear-gradient(160deg, #061426, #0a1020 55%, #090a16);
+      box-shadow: 0 30px 90px rgba(0, 0, 0, 0.55);
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      padding: 70px 70px 54px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 34px;
+    }
+
+    .kicker {
+      color: var(--gold);
+      font-weight: 900;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      font-size: 18px;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 72px;
+      line-height: 0.95;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 1000;
+      background: linear-gradient(90deg, #00f5ff, #7c3aed 52%, #ffcc00);
+      -webkit-background-clip: text;
+      color: transparent;
+      text-shadow: 0 0 34px rgba(56, 216, 255, 0.14);
+    }
+
+    .subtitle {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 25px;
+      font-weight: 650;
+    }
+
+    .board {
+      border-radius: 28px;
+      overflow: hidden;
+      background: rgba(7, 13, 29, 0.62);
+      border: 1px solid var(--stroke);
+      backdrop-filter: blur(8px);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 24px 70px rgba(0, 0, 0, 0.34);
+    }
+
+    .table-head,
+    .row {
+      display: grid;
+      grid-template-columns: 130px minmax(0, 1fr) 190px;
+      align-items: center;
+      gap: 18px;
+      padding: 0 28px;
+    }
+
+    .table-head {
+      height: 74px;
+      background: rgba(15, 23, 42, 0.88);
+      color: rgba(255, 255, 255, 0.65);
+      font-size: 24px;
+      font-weight: 1000;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .row {
+      min-height: 45px;
+      height: 45px;
+      border-top: 1px solid rgba(255, 255, 255, 0.055);
+      background: var(--row);
+    }
+
+    .row:nth-child(even) {
+      background: var(--row-soft);
+    }
+
+    .row.top-1 {
+      background: linear-gradient(90deg, rgba(255, 215, 90, 0.33), rgba(15, 23, 42, 0.72));
+    }
+
+    .row.top-2 {
+      background: linear-gradient(90deg, rgba(226, 232, 240, 0.24), rgba(15, 23, 42, 0.72));
+    }
+
+    .row.top-3 {
+      background: linear-gradient(90deg, rgba(205, 127, 50, 0.25), rgba(15, 23, 42, 0.72));
+    }
+
+    .rank {
+      font-size: 22px;
+      font-weight: 1000;
+      color: #f8fafc;
+      white-space: nowrap;
+    }
+
+    .name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 22px;
+      font-weight: 900;
+      color: #ffffff;
+      text-shadow: 0 1px 0 rgba(0, 0, 0, 0.22);
+    }
+
+    .score {
+      justify-self: end;
+      min-width: 140px;
+      height: 34px;
+      padding: 0 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 1px solid rgba(56, 216, 255, 0.32);
+      background: rgba(56, 216, 255, 0.15);
+      color: var(--cyan);
+      font-size: 22px;
+      font-weight: 1000;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 0 18px rgba(56, 216, 255, 0.22);
+    }
+
+    .footer {
+      margin-top: auto;
+      padding-top: 26px;
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      color: rgba(255, 255, 255, 0.68);
+      font-size: 20px;
+      font-weight: 750;
+    }
+
+    .status {
+      padding: 26px;
+      text-align: center;
+      color: rgba(255, 255, 255, 0.74);
+      font-size: 22px;
+      font-weight: 800;
+    }
+
+    .status.error {
+      color: #fecaca;
+      background: rgba(239, 68, 68, 0.16);
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 0;
+      }
+
+      .leaderboard-canvas {
+        width: 100%;
+        min-height: 100vh;
+        border-radius: 0;
+      }
+
+      .overlay {
+        padding: 36px 14px 28px;
+      }
+
+      h1 {
+        font-size: clamp(34px, 8vw, 52px);
+        letter-spacing: 0.05em;
+      }
+
+      .subtitle {
+        font-size: 16px;
+      }
+
+      .kicker {
+        font-size: 12px;
+      }
+
+      .table-head,
+      .row {
+        grid-template-columns: 74px minmax(0, 1fr) 98px;
+        gap: 8px;
+        padding: 0 12px;
+      }
+
+      .table-head {
+        height: 48px;
+        font-size: 14px;
+      }
+
+      .row {
+        height: 40px;
+        min-height: 40px;
+      }
+
+      .rank,
+      .name {
+        font-size: 15px;
+      }
+
+      .score {
+        min-width: 86px;
+        height: 28px;
+        font-size: 15px;
+        padding: 0 8px;
+      }
+
+      .footer {
+        font-size: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="leaderboard-canvas" id="leaderboardCanvas">
+    <div class="overlay">
+      <header class="header">
+        <div class="kicker">Bullet Echo • XPRO</div>
+        <h1>Leaderboard</h1>
+        <div class="subtitle" id="subtitle">Chargement du classement...</div>
+      </header>
+
+      <section class="board" aria-label="Classement XPRO">
+        <div class="table-head">
+          <div>Rank</div>
+          <div>Nom</div>
+          <div style="text-align:right;">Score</div>
+        </div>
+        <div id="rows">
+          <div class="status">Chargement des joueurs...</div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <div id="totalPlayers">0 joueurs</div>
+        <div id="updatedAt">XPRO Ranking System</div>
+      </footer>
+    </div>
+  </main>
+
+  <script>
+    const DEFAULT_ROSTER_URL = "https://raw.githubusercontent.com/Tahi-Tua/xpro_bot/main/data/memberRankingRoster.json";
+    const params = new URLSearchParams(window.location.search);
+    const rosterUrl = params.get("roster") || DEFAULT_ROSTER_URL;
+
+    const rows = document.getElementById("rows");
+    const subtitle = document.getElementById("subtitle");
+    const totalPlayers = document.getElementById("totalPlayers");
+    const updatedAt = document.getElementById("updatedAt");
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatScore(value) {
+      return Number(value || 0).toLocaleString("en-US");
+    }
+
+    function getDisplayName(member) {
+      return String(
+        member.renderName ||
+        member.displayName ||
+        member.name ||
+        member.member ||
+        "Unknown"
+      ).trim();
+    }
+
+    function normalizeMember(member) {
+      return {
+        name: getDisplayName(member),
+        score: Number(member.season || member.score || 0),
+      };
+    }
+
+    function rowClass(rank) {
+      if (rank === 1) return "row top-1";
+      if (rank === 2) return "row top-2";
+      if (rank === 3) return "row top-3";
+      return "row";
+    }
+
+    function rankLabel(rank) {
+      if (rank === 1) return "🥇 #1";
+      if (rank === 2) return "🥈 #2";
+      if (rank === 3) return "🥉 #3";
+      return `#${rank}`;
+    }
+
+    function render(members) {
+      const ranking = members
+        .map(normalizeMember)
+        .filter((member) => member.name)
+        .sort((a, b) => b.score - a.score);
+
+      subtitle.textContent = `Classement officiel des ${ranking.length} joueurs`;
+      totalPlayers.textContent = `${ranking.length} joueurs`;
+      updatedAt.textContent = new Date().toLocaleString("fr-FR");
+
+      rows.innerHTML = ranking.map((member, index) => {
+        const rank = index + 1;
+        return `
+          <div class="${rowClass(rank)}">
+            <div class="rank">${rankLabel(rank)}</div>
+            <div class="name">${escapeHtml(member.name)}</div>
+            <div class="score">${formatScore(member.score)}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function loadRanking() {
+      try {
+        const response = await fetch(`${rosterUrl}?t=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const members = Array.isArray(data) ? data : data.members;
+        if (!Array.isArray(members)) throw new Error("members[] introuvable dans le JSON");
+        render(members);
+      } catch (error) {
+        rows.innerHTML = `<div class="status error">Erreur chargement classement : ${escapeHtml(error.message)}</div>`;
+        subtitle.textContent = "Classement indisponible";
+      }
+    }
+
+    loadRanking();
+  </script>
+</body>
+</html>
