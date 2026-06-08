@@ -19,7 +19,7 @@ const {
   buildMemberRankingEmbed,
   formatNumber,
 } = require("../../utils/memberRankingEmbed");
-const { buildScoreboardSvgBuffer } = require("../../utils/memberRankingBoard");
+const { buildScoreboardPngBuffer } = require("../../utils/memberRankingBoard");
 
 const ROSTER_PATH = process.env.MEMBER_RANKING_ROSTER_FILE || path.join(__dirname, "..", "..", "data", "memberRankingRoster.json");
 const ROSTER_URL = process.env.MEMBER_RANKING_ROSTER_URL || "https://raw.githubusercontent.com/Tahi-Tua/xpro_bot/main/data/memberRankingRoster.json";
@@ -252,7 +252,7 @@ module.exports = {
     .addSubcommand((subcommand) =>
       subcommand
         .setName("board")
-        .setDescription("Send the complete scoreboard as an image."),
+        .setDescription("Send the complete scoreboard as a PNG image."),
     )
     .addSubcommand((subcommand) =>
       subcommand
@@ -311,8 +311,9 @@ module.exports = {
     if (subcommand === "board") {
       await interaction.deferReply();
       const allRankings = await enrichRankingsWithGuildMembers(interaction.guild, getAllRankings());
-      const attachment = new AttachmentBuilder(buildScoreboardSvgBuffer(allRankings), {
-        name: "xpro-scoreboard.svg",
+      const pngBuffer = await buildScoreboardPngBuffer(allRankings);
+      const attachment = new AttachmentBuilder(pngBuffer, {
+        name: "xpro-scoreboard.png",
       });
 
       return interaction.editReply({
