@@ -2,7 +2,7 @@ const { SlashCommandBuilder, MessageFlags, PermissionFlagsBits } = require("disc
 const {
   LEADER_ROLE_ID,
   MEMBER_RANKINGS_CHANNEL_ID,
-  MODERATION_LOG_CHANNEL_ID,
+  RANKING_LOG_CHANNEL_ID,
   STAFF_ROLE_ID,
 } = require("../../config/channels");
 const {
@@ -26,8 +26,8 @@ function canManageRankings(interaction) {
 }
 
 async function sendRankingAuditLog(interaction, action, details = "") {
-  const channel = interaction.guild.channels.cache.get(MODERATION_LOG_CHANNEL_ID) ||
-    await interaction.guild.channels.fetch(MODERATION_LOG_CHANNEL_ID).catch(() => null);
+  const channel = interaction.guild.channels.cache.get(RANKING_LOG_CHANNEL_ID) ||
+    await interaction.guild.channels.fetch(RANKING_LOG_CHANNEL_ID).catch(() => null);
 
   if (!channel?.isTextBased?.()) return;
 
