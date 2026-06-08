@@ -48,8 +48,36 @@ function toSafeScore(value) {
   return Math.max(0, Math.floor(number));
 }
 
+async function createRosterTemplate() {
+  const template = {
+    members: [
+      {
+        name: "Example Player",
+        weekly: 0,
+        season: 0,
+        dailyXp: 0,
+      },
+    ],
+  };
+
+  await fs.mkdir(path.dirname(ROSTER_PATH), { recursive: true });
+  await fs.writeFile(ROSTER_PATH, `${JSON.stringify(template, null, 2)}\n`, "utf8");
+}
+
 async function loadRankingRoster() {
-  const raw = await fs.readFile(ROSTER_PATH, "utf8");
+  let raw;
+
+  try {
+    raw = await fs.readFile(ROSTER_PATH, "utf8");
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      await createRosterTemplate();
+      throw new Error(`Roster file was missing, so a template was created at ${ROSTER_PATH}. Add your members/scores, redeploy if needed, then run /ranking reload again.`);
+    }
+
+    throw err;
+  }
+
   const parsed = JSON.parse(raw || "{}");
   const members = Array.isArray(parsed) ? parsed : parsed.members;
 
