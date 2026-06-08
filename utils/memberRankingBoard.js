@@ -1,3 +1,5 @@
+const sharp = require("sharp");
+
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("en-US");
 }
@@ -42,7 +44,6 @@ function buildScoreboardSvg(rankings) {
   const sorted = [...entries].sort((a, b) => Number(b.season || 0) - Number(a.season || 0));
   const width = 1080;
   const rowHeight = 64;
-  const headerHeight = 252;
   const tableTop = 282;
   const footerHeight = 90;
   const height = tableTop + 58 + sorted.length * rowHeight + footerHeight;
@@ -141,7 +142,15 @@ function buildScoreboardSvgBuffer(rankings) {
   return Buffer.from(buildScoreboardSvg(rankings), "utf8");
 }
 
+async function buildScoreboardPngBuffer(rankings) {
+  const svgBuffer = buildScoreboardSvgBuffer(rankings);
+  return sharp(svgBuffer, { density: 220 })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+}
+
 module.exports = {
   buildScoreboardSvg,
   buildScoreboardSvgBuffer,
+  buildScoreboardPngBuffer,
 };
