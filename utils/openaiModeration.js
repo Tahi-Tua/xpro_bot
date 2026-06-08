@@ -3,6 +3,7 @@ const OpenAI = require("openai");
 const MODEL = process.env.OPENAI_MODERATION_MODEL || "gpt-5-mini";
 const ENABLED = process.env.OPENAI_BADWORDS_CONTEXT_ENABLED !== "false";
 const TIMEOUT_MS = Number(process.env.OPENAI_MODERATION_TIMEOUT_MS || 8000);
+const FAIL_MODE = process.env.OPENAI_MODERATION_FAIL_MODE || "log_only";
 
 let client = null;
 
@@ -46,6 +47,26 @@ function normalizeDecision(raw, fallbackReason = "No usable AI moderation result
   };
 }
 
+function failDecision(reason) {
+  if (FAIL_MODE === "strict") {
+    return normalizeDecision({
+      is_violation: true,
+      severity: "medium",
+      action: "delete_and_warn",
+      confidence: 0,
+      reason,
+    });
+  }
+
+  return normalizeDecision({
+    is_violation: false,
+    severity: "none",
+    action: "log_only",
+    confidence: 0,
+    reason,
+  });
+}
+
 async function withTimeout(promise, timeoutMs) {
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -72,13 +93,7 @@ async function analyzeBadwordContext({ content, detectedWords, authorTag, channe
 
   const openai = getClient();
   if (!openai) {
-    return normalizeDecision({
-      is_violation: true,
-      severity: "medium",
-      action: "delete_and_warn",
-      confidence: 1,
-      reason: "OPENAI_API_KEY missing; using local badword detection fallback.",
-    });
+    return failDecision("OPENAI_API_KEY missing; badword context analysis skipped.");
   }
 
   const prompt = `You are a Discord moderation classifier for a bilingual French/English gaming community.\n\nAnalyze the full message context, not isolated words. Decide whether the message is a real insult, harassment, hateful attack, or abusive language directed at someone.\n\nDo NOT flag harmless cases such as:\n- quoting or discussing a bad word without attacking someone\n- gaming context like \"kill him in game\", \"killer move\", \"dead in game\"\n- friendly banter without direct abuse\n- asking whether a word is forbidden\n- false positives caused by a substring or a word used in a neutral sentence\n\nFlag only if there is a clear violation in context.\n\nReturn strict JSON only with this schema:\n{\n  \"is_violation\": boolean,\n  \"severity\": \"none\" | \"low\" | \"medium\" | \"high\",\n  \"action\": \"ignore\" | \"log_only\" | \"delete\" | \"delete_and_warn\" | \"escalate\",\n  \"confidence\": number,\n  \"reason\": string\n}\n\nAuthor: ${authorTag || "unknown"}\nChannel: ${channelName || "unknown"}\nDetected suspicious words: ${Array.isArray(detectedWords) ? detectedWords.join(", ") : "unknown"}\nMessage:\n${String(content || "").slice(0, 1800)}`;
@@ -115,13 +130,7 @@ async function analyzeBadwordContext({ content, detectedWords, authorTag, channe
     return normalizeDecision(parsed, "AI moderation returned invalid JSON; using safe fallback.");
   } catch (err) {
     console.warn("[openaiModeration] Context analysis failed:", err?.message || err);
-    return normalizeDecision({
-      is_violation: true,
-      severity: "medium",
-      action: "delete_and_warn",
-      confidence: 0,
-      reason: `AI moderation unavailable; using local badword detection fallback: ${err?.message || "unknown error"}`,
-    });
+    return failDecision(`AI moderation unavailable; badword context analysis skipped: ${err?.message || "unknown error"}`);
   }
 }
 
