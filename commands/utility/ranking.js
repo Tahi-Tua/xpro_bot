@@ -14,7 +14,11 @@ const {
   resetRankings,
   upsertMemberRanking,
 } = require("../../utils/memberRankingStore");
-const { buildMemberRankingEmbed, formatNumber } = require("../../utils/memberRankingEmbed");
+const {
+  buildFullRankingEmbeds,
+  buildMemberRankingEmbed,
+  formatNumber,
+} = require("../../utils/memberRankingEmbed");
 
 const ROSTER_PATH = process.env.MEMBER_RANKING_ROSTER_FILE || path.join(__dirname, "..", "..", "data", "memberRankingRoster.json");
 const ROSTER_URL = process.env.MEMBER_RANKING_ROSTER_URL || "https://raw.githubusercontent.com/Tahi-Tua/xpro_bot/main/data/memberRankingRoster.json";
@@ -236,6 +240,11 @@ module.exports = {
     )
     .addSubcommand((subcommand) =>
       subcommand
+        .setName("list")
+        .setDescription("Show the full season ranking privately."),
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
         .setName("publish")
         .setDescription("Generate a private ranking preview for manual reposting."),
     )
@@ -272,6 +281,16 @@ module.exports = {
       const embed = buildMemberRankingEmbed(top, { updatedBy: interaction.user.tag });
       return interaction.reply({
         embeds: [embed],
+        flags: MessageFlags.Ephemeral,
+        allowedMentions: { parse: [] },
+      });
+    }
+
+    if (subcommand === "list") {
+      const allRankings = await enrichRankingsWithGuildMembers(interaction.guild, getAllRankings());
+      const embeds = buildFullRankingEmbeds(allRankings, { pageSize: 10 });
+      return interaction.reply({
+        embeds,
         flags: MessageFlags.Ephemeral,
         allowedMentions: { parse: [] },
       });
