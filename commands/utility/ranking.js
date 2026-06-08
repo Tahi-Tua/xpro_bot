@@ -19,7 +19,7 @@ const {
   buildMemberRankingEmbed,
   formatNumber,
 } = require("../../utils/memberRankingEmbed");
-const { buildScoreboardPngBuffer } = require("../../utils/memberRankingBoard");
+const { buildLeaderboardScreenshotBuffer } = require("../../utils/memberRankingBoard");
 
 const ROSTER_PATH = process.env.MEMBER_RANKING_ROSTER_FILE || path.join(__dirname, "..", "..", "data", "memberRankingRoster.json");
 const ROSTER_URL = process.env.MEMBER_RANKING_ROSTER_URL || "https://raw.githubusercontent.com/Tahi-Tua/xpro_bot/main/data/memberRankingRoster.json";
