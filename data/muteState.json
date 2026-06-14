@@ -1,1 +1,35 @@
-{}
+{
+  "test-guild-1": {
+    "test-user-1": {
+      "expiresAt": 1778493955524,
+      "reason": "spam",
+      "createdAt": 1778493895524
+    }
+  },
+  "test-guild-2": {
+    "test-user-2": {
+      "expiresAt": 1778493955545,
+      "reason": "badwords",
+      "createdAt": 1778493895545
+    }
+  },
+  "test-guild-4": {
+    "user-a": {
+      "expiresAt": 1778493955556,
+      "reason": "spam",
+      "createdAt": 1778493895556
+    },
+    "user-b": {
+      "expiresAt": 1778493955556,
+      "reason": "badwords",
+      "createdAt": 1778493895556
+    }
+  },
+  "test-guild-5": {
+    "test-user-5": {
+      "expiresAt": 1778493894559,
+      "reason": "test",
+      "createdAt": 1778493895559
+    }
+  }
+}

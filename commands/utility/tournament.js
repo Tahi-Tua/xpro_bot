@@ -16,6 +16,15 @@ function canManageTournaments(interaction) {
   );
 }
 
+function isSupportedImageAttachment(attachment) {
+  const contentType = attachment.contentType?.split(";")[0]?.toLowerCase();
+  if (contentType) {
+    return ["image/png", "image/jpeg", "image/gif", "image/webp"].includes(contentType);
+  }
+
+  return /\.(png|jpe?g|gif|webp)$/i.test(attachment.name || attachment.url || "");
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("tournament")
@@ -34,7 +43,7 @@ module.exports = {
         .addStringOption((option) =>
           option
             .setName("description")
-            .setDescription("Short tournament description or rules.")
+            .setDescription("Optional extra text. Default KOTH announcement is used if empty.")
             .setRequired(false)
             .setMaxLength(1000),
         )
@@ -52,6 +61,45 @@ module.exports = {
             .setDescription("Tournament date/time text.")
             .setRequired(false)
             .setMaxLength(100),
+        )
+        .addStringOption((option) =>
+          option
+            .setName("mode")
+            .setDescription("Tournament mode text.")
+            .setRequired(false)
+            .setMaxLength(100),
+        )
+        .addAttachmentOption((option) =>
+          option
+            .setName("image")
+            .setDescription("Optional tournament poster image.")
+            .setRequired(false),
+        ),
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("koth")
+        .setDescription("Create the Xavier Pro KOTH tournament announcement.")
+        .addAttachmentOption((option) =>
+          option
+            .setName("image")
+            .setDescription("Optional KOTH tournament poster image.")
+            .setRequired(false),
+        )
+        .addStringOption((option) =>
+          option
+            .setName("date")
+            .setDescription("Tournament date/time text. Default: Coming Soon")
+            .setRequired(false)
+            .setMaxLength(100),
+        )
+        .addIntegerOption((option) =>
+          option
+            .setName("max_teams")
+            .setDescription("Maximum registered squads. Leave empty for no limit.")
+            .setRequired(false)
+            .setMinValue(1)
+            .setMaxValue(250),
         ),
     )
     .addSubcommand((subcommand) =>
@@ -81,14 +129,39 @@ module.exports = {
 
     const subcommand = interaction.options.getSubcommand();
 
-    if (subcommand === "create") {
+    if (subcommand === "create" || subcommand === "koth") {
+      const imageAttachment = interaction.options.getAttachment("image") || null;
+      if (imageAttachment && !isSupportedImageAttachment(imageAttachment)) {
+        return interaction.reply({
+          content: "❌ Invalid file type. Please attach an image (PNG, JPG, GIF, or WEBP).",
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+      if (subcommand === "koth") {
+        const tournament = await createTournament(interaction, {
+          name: "Xavier Pro KOTH Tournament",
+          description: "More details, rules, and team registration will be announced soon. Stay tuned.",
+          maxPlayers: interaction.options.getInteger("max_teams") || 0,
+          dateText: interaction.options.getString("date") || "Coming Soon",
+          modeText: "Battle Royale Duos",
+          imageUrl: imageAttachment?.url || null,
+        });
+
+        return interaction.editReply({
+          content: `✅ KOTH tournament announcement created.\nMessage ID: \`${tournament.messageId}\``,
+        });
+      }
 
       const tournament = await createTournament(interaction, {
         name: interaction.options.getString("name"),
-        description: interaction.options.getString("description") || "Tournament registration is open.",
+        description: interaction.options.getString("description") || "",
         maxPlayers: interaction.options.getInteger("max_players") || 0,
         dateText: interaction.options.getString("date") || "",
+        modeText: interaction.options.getString("mode") || "Battle Royale Duos",
+        imageUrl: imageAttachment?.url || null,
       });
 
       return interaction.editReply({

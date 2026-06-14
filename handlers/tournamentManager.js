@@ -49,25 +49,44 @@ function buildTournamentEmbed(tournament) {
   const participantCount = Object.keys(tournament.participants || {}).length;
   const maxPlayers = tournament.maxPlayers ? String(tournament.maxPlayers) : "No limit";
   const status = tournament.closed ? "Closed" : "Open";
+  const dateText = tournament.dateText || "Coming Soon";
+  const modeText = tournament.modeText || "Battle Royale Duos";
+  const baseDescription = [
+    "*Exclusively for Xavier Pro members.*",
+    "",
+    "Get ready for an intense Battle Royale showdown featuring:",
+    "• 2v2v2v2v2 format",
+    "• 10 rounds",
+    "• Point-based scoring system",
+    "• In-game Bucks rewards for the top team",
+    "",
+    "The squad with the highest total points after all 10 rounds will be crowned champions.",
+    "",
+    `📅 Date: ${dateText}`,
+    `🎮 Mode: ${modeText}`,
+    "👑 Only one squad can reign.",
+    "",
+    tournament.description || "More details, rules, and team registration will be announced soon. Stay tuned.",
+  ].join("\n");
 
   const embed = new EmbedBuilder()
-    .setTitle(`🏆 ${tournament.name}`)
-    .setDescription(tournament.description || "Tournament registration is open.")
+    .setTitle(`🏆 ${tournament.name.toUpperCase()} 🏆`)
+    .setDescription(baseDescription)
     .setColor(tournament.closed ? "#777777" : "#F1C40F")
     .addFields(
       { name: "Status", value: status, inline: true },
-      { name: "Registered", value: `${participantCount}/${maxPlayers}`, inline: true },
+      { name: "Teams Registered", value: `${participantCount}/${maxPlayers}`, inline: true },
     )
-    .setFooter({ text: "Use the buttons below to register or cancel your registration." })
+    .setFooter({ text: "Use the buttons below to register your squad or cancel your registration." })
     .setTimestamp(new Date(tournament.createdAt));
 
-  if (tournament.dateText) {
-    embed.addFields({ name: "Date", value: tournament.dateText, inline: true });
+  if (tournament.imageUrl) {
+    embed.setImage(tournament.imageUrl);
   }
 
   const participantNames = Object.values(tournament.participants || {})
     .slice(0, 20)
-    .map((entry, index) => `${index + 1}. ${entry.displayName}`)
+    .map((entry, index) => `${index + 1}. ${entry.teamName || entry.displayName}`)
     .join("\n");
 
   if (participantNames) {
@@ -85,12 +104,12 @@ function buildTournamentButtons(messageId, closed = false) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`tournament_join_${messageId}`)
-      .setLabel("Register")
+      .setLabel("Register Squad")
       .setStyle(ButtonStyle.Success)
       .setDisabled(closed),
     new ButtonBuilder()
       .setCustomId(`tournament_leave_${messageId}`)
-      .setLabel("Cancel")
+      .setLabel("Cancel Registration")
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(closed),
   );
@@ -109,12 +128,14 @@ async function updateTournamentMessage(client, tournament) {
   });
 }
 
-async function createTournament(interaction, { name, description, maxPlayers = 0, dateText = "" }) {
+async function createTournament(interaction, { name, description, maxPlayers = 0, dateText = "", modeText = "", imageUrl = null }) {
   const initialTournament = {
     name,
     description,
     maxPlayers,
     dateText,
+    modeText,
+    imageUrl,
     participants: {},
     closed: false,
     createdAt: Date.now(),
@@ -188,6 +209,7 @@ async function handleTournamentButton(interaction) {
       participants[userId] = {
         userId,
         displayName: interaction.member?.displayName || interaction.user.username,
+        teamName: interaction.member?.displayName || interaction.user.username,
         username: interaction.user.username,
         registeredAt: Date.now(),
       };
