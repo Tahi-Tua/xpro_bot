@@ -74,3 +74,13 @@ test("leaderboardImage: bundled fonts are available for Unicode names", () => {
   assert.ok(fonts.includes("NotoSansCanadianAboriginal-Regular.ttf"));
   assert.ok(fonts.includes("NotoSerifTibetan-Regular.ttf"));
 });
+
+test("ranking board HTML uses bundled fonts and avoids emoji-only glyphs", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "public", "leaderboard-xpro.html"), "utf8");
+
+  assert.match(html, /@font-face/);
+  assert.match(html, /NotoSans\.ttf/);
+  assert.match(html, /NotoSansYi-Regular\.ttf/);
+  assert.match(html, /NotoSerifTibetan-Regular\.ttf/);
+  assert.doesNotMatch(html, /🏆|🌟|✨|📈|🏅|🥈|🥉/u);
+});

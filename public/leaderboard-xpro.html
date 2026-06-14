@@ -5,11 +5,111 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>XPRO Member Leaderboard</title>
   <style>
+    @font-face {
+      font-family: "Noto Sans";
+      src: url("../assets/fonts/NotoSans.ttf") format("truetype");
+      font-weight: 100 1000;
+      font-style: normal;
+      font-display: block;
+    }
+
+    @font-face {
+      font-family: "Noto Sans Devanagari UI";
+      src: url("../assets/fonts/NotoSansDevanagariUI-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+
+    @font-face {
+      font-family: "Noto Sans Canadian Aboriginal";
+      src: url("../assets/fonts/NotoSansCanadianAboriginal-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+
+    @font-face {
+      font-family: "Noto Sans Cherokee";
+      src: url("../assets/fonts/NotoSansCherokee.ttf") format("truetype");
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: block;
+    }
+
+    @font-face {
+      font-family: "Noto Sans Yi";
+      src: url("../assets/fonts/NotoSansYi-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+
+    @font-face {
+      font-family: "Noto Sans Tai Viet";
+      src: url("../assets/fonts/NotoSansTaiViet-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+
+    @font-face {
+      font-family: "Noto Sans Tai Le";
+      src: url("../assets/fonts/NotoSansTaiLe-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+
+    @font-face {
+      font-family: "Noto Sans Limbu";
+      src: url("../assets/fonts/NotoSansLimbu-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+
+    @font-face {
+      font-family: "Noto Sans Syloti Nagri";
+      src: url("../assets/fonts/NotoSansSylotiNagri-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+
+    @font-face {
+      font-family: "Noto Serif Tibetan";
+      src: url("../assets/fonts/NotoSerifTibetan-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+
+    @font-face {
+      font-family: "Noto Sans Symbols 2";
+      src: url("../assets/fonts/NotoSansSymbols2-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
-      font-family: "Segoe UI", Arial, sans-serif;
+      font-family:
+        "Noto Sans",
+        "Noto Sans Devanagari UI",
+        "Noto Serif Tibetan",
+        "Noto Sans Canadian Aboriginal",
+        "Noto Sans Cherokee",
+        "Noto Sans Yi",
+        "Noto Sans Tai Viet",
+        "Noto Sans Tai Le",
+        "Noto Sans Limbu",
+        "Noto Sans Syloti Nagri",
+        "Noto Sans Symbols 2",
+        sans-serif;
     }
 
     html,
@@ -183,6 +283,9 @@
     }
 
     .rank {
+      display: flex;
+      align-items: center;
+      gap: .28em;
       font-weight: 1000;
       font-size: clamp(1.25rem, 3.8vw, 2.75rem);
       color: #f8fafc;
@@ -200,6 +303,25 @@
       text-overflow: ellipsis;
       text-shadow: 0 8px 18px rgba(0, 0, 0, .34);
     }
+
+    .medal {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: clamp(26px, 5.8vw, 50px);
+      height: clamp(26px, 5.8vw, 50px);
+      border-radius: 999px;
+      color: #111827;
+      font-size: .54em;
+      font-weight: 1000;
+      line-height: 1;
+      border: 2px solid rgba(255, 255, 255, .88);
+      box-shadow: 0 5px 16px rgba(0, 0, 0, .32), inset 0 1px 0 rgba(255, 255, 255, .42);
+    }
+
+    .medal-1 { background: linear-gradient(180deg, #fde68a, #f59e0b); }
+    .medal-2 { background: linear-gradient(180deg, #f8fafc, #94a3b8); }
+    .medal-3 { background: linear-gradient(180deg, #fdba74, #b45309); }
 
     .score {
       text-align: right;
@@ -268,10 +390,6 @@
       background: radial-gradient(circle at 18% 50%, rgba(205, 127, 50, .13), transparent 34%);
     }
 
-    .top-1 .rank::before { content: "🏅 "; }
-    .top-2 .rank::before { content: "🥈 "; }
-    .top-3 .rank::before { content: "🥉 "; }
-
     .top-1 .badge {
       border-color: rgba(255, 215, 0, .48);
       box-shadow: 0 0 26px rgba(255, 215, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .14);
@@ -330,7 +448,7 @@
   <div class="container" id="leaderboardCanvas">
     <header class="header">
       <h1>XPRO MEMBER</h1>
-      <p id="subtitle">Ranking of the best contributors 🏆🌟✨</p>
+      <p id="subtitle">Ranking of the best contributors</p>
     </header>
 
     <main class="scoreboard">
@@ -344,7 +462,7 @@
       <div id="scoreboardRows"></div>
     </main>
 
-    <div class="footer" id="footer">Official ranking update 📈🏆</div>
+    <div class="footer" id="footer">Official ranking update</div>
   </div>
 
   <script>
@@ -402,14 +520,15 @@
         .slice(0, 5);
 
       statusBox.style.display = "none";
-      subtitle.textContent = "Ranking of the best contributors 🏆🌟✨";
-      footer.textContent = "Official ranking update 📈🏆";
+      subtitle.textContent = "Ranking of the best contributors";
+      footer.textContent = "Official ranking update";
 
       scoreboardRows.innerHTML = ranking.map((member, index) => {
         const rank = index + 1;
+        const medal = rank <= 3 ? `<span class="medal medal-${rank}">${rank}</span>` : "";
         return `
           <div class="${rowClass(rank)}">
-            <div class="rank">#${rank}</div>
+            <div class="rank">${medal}#${rank}</div>
             <div class="name">${escapeHtml(member.name)}</div>
             <div class="score"><span class="badge">${formatScore(member.score)}</span></div>
           </div>

@@ -14,6 +14,7 @@ async function getBrowser() {
         "--disable-dev-shm-usage",
         "--disable-gpu",
         "--no-zygote",
+        "--allow-file-access-from-files",
       ],
       defaultViewport: {
         width: 1080,
