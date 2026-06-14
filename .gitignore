@@ -26,3 +26,4 @@ node_modules/
 bot.log
 #Test results file
 TestResults.xml
+outputs/
