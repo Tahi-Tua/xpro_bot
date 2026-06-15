@@ -91,6 +91,7 @@ node deploy-commands.js
 Commands:
 
 - `/hub` posts the Glide Member Hub link.
-- `/leaderboard show` posts the Discord PNG leaderboard.
-- `/leaderboard sync` pushes the current bot leaderboard into the Google Sheet.
-- `/leaderboard set`, `/leaderboard add`, `/leaderboard remove`, and `/leaderboard reset` auto-sync when Google Sheets is configured.
+- `/ranking board` posts the Discord PNG ranking board.
+- `/ranking reload`, `/ranking set`, `/ranking remove`, and `/ranking reset` manage ranking data.
+- The bot automatically publishes the ranking board every Monday at 03:00 Europe/Paris in `MEMBER_RANKINGS_CHANNEL_ID`.
+- The Member Hub `Leaderboard` sheet is populated from the same ranking data source.

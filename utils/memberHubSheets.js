@@ -4,14 +4,32 @@ const {
   getValues,
   updateValues,
 } = require("./googleSheetsClient");
-const { getEntries } = require("./leaderboardStore");
+const { getAllRankings } = require("./memberRankingStore");
 
 const LEADERBOARD_SHEET = "Leaderboard";
 const LEADERBOARD_HEADERS = ["Name", "DiscordId", "Score", "Rank", "LastUpdated"];
 const EVENTS_SHEET = "Events";
 
-function buildLeaderboardSheetRows(entries = getEntries(), now = new Date()) {
-  const sorted = [...entries].sort((a, b) => {
+function getDefaultLeaderboardEntries() {
+  return getAllRankings().map((entry) => ({
+    name: entry.displayName || entry.renderName || entry.tag || entry.userId || "",
+    discordId: /^\d+$/.test(String(entry.userId || "")) ? entry.userId : "",
+    score: entry.score ?? entry.season ?? 0,
+    updatedAt: entry.updatedAt,
+  }));
+}
+
+function normalizeLeaderboardEntry(entry) {
+  return {
+    name: entry.name || entry.displayName || entry.renderName || entry.tag || entry.userId || "",
+    discordId: entry.discordId || (/^\d+$/.test(String(entry.userId || "")) ? entry.userId : ""),
+    score: Number(entry.score ?? entry.season ?? 0) || 0,
+    updatedAt: entry.updatedAt,
+  };
+}
+
+function buildLeaderboardSheetRows(entries = getDefaultLeaderboardEntries(), now = new Date()) {
+  const sorted = entries.map(normalizeLeaderboardEntry).sort((a, b) => {
     const scoreDiff = (Number(b.score) || 0) - (Number(a.score) || 0);
     if (scoreDiff !== 0) return scoreDiff;
     return String(a.name || "").localeCompare(String(b.name || ""));
@@ -105,7 +123,7 @@ async function syncLeaderboardToGoogleSheets(options = {}) {
     };
   }
 
-  const values = buildLeaderboardSheetRows(options.entries || getEntries(), options.now || new Date());
+  const values = buildLeaderboardSheetRows(options.entries || getDefaultLeaderboardEntries(), options.now || new Date());
   await clearValues(`${LEADERBOARD_SHEET}!A:E`, config);
   const updated = await updateValues(`${LEADERBOARD_SHEET}!A1:E${values.length}`, values, config);
 
@@ -122,6 +140,7 @@ module.exports = {
   LEADERBOARD_SHEET,
   EVENTS_SHEET,
   buildLeaderboardSheetRows,
+  getDefaultLeaderboardEntries,
   getUpcomingEventsFromGoogleSheets,
   getMemberHubSheetsStatus,
   rowsToObjects,

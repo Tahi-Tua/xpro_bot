@@ -33,7 +33,7 @@ const outputPath = path.join(outputDir, "XPRO Member Hub.xlsx");
 
 const channelConfig = repoRequire("./config/channels");
 const heroes = repoRequire("./config/heroes");
-const { getEntries } = repoRequire("./utils/leaderboardStore");
+const { getAllRankings } = repoRequire("./utils/memberRankingStore");
 
 const guildId = process.env.GUILD_ID || "1380190902630223990";
 
@@ -81,20 +81,23 @@ function addSheet(workbook, name, headers, rows, columnWidths) {
 }
 
 function buildLeaderboardRows() {
-  const entries = getEntries().slice(0, 100);
+  const entries = getAllRankings().slice(0, 100);
   let lastScore = null;
   let lastRank = 0;
 
   return entries.map((entry, index) => {
-    if (entry.score !== lastScore) {
+    const score = Number(entry.score ?? entry.season ?? 0) || 0;
+    const name = entry.displayName || entry.renderName || entry.tag || entry.userId || "";
+
+    if (score !== lastScore) {
       lastRank = index + 1;
-      lastScore = entry.score;
+      lastScore = score;
     }
 
     return [
-      entry.name,
-      "",
-      entry.score,
+      name,
+      /^\d+$/.test(String(entry.userId || "")) ? entry.userId : "",
+      score,
       lastRank,
       entry.updatedAt ? new Date(entry.updatedAt).toISOString() : new Date().toISOString(),
     ];

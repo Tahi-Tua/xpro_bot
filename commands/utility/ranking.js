@@ -182,6 +182,21 @@ function buildListMessage(rankings) {
     .join("\n");
 }
 
+async function buildRankingBoardMessagePayload(options = {}) {
+  const pngBuffer = await buildLeaderboardScreenshotBuffer({
+    rosterUrl: options.rosterUrl || ROSTER_URL,
+  });
+  const attachment = new AttachmentBuilder(pngBuffer, {
+    name: "xpro-member-leaderboard.png",
+  });
+
+  return {
+    content: "🏆 **XPRO MEMBER — Ranking of the best contributors**",
+    files: [attachment],
+    allowedMentions: { parse: [] },
+  };
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("ranking")
@@ -275,16 +290,7 @@ module.exports = {
       await interaction.deferReply();
 
       try {
-        const pngBuffer = await buildLeaderboardScreenshotBuffer({ rosterUrl: ROSTER_URL });
-        const attachment = new AttachmentBuilder(pngBuffer, {
-          name: "xpro-member-leaderboard.png",
-        });
-
-        return interaction.editReply({
-          content: "🏆 **XPRO MEMBER — Ranking of the best contributors**",
-          files: [attachment],
-          allowedMentions: { parse: [] },
-        });
+        return interaction.editReply(await buildRankingBoardMessagePayload());
       } catch (error) {
         console.error("[ranking board] Failed to generate leaderboard image:", error);
         return interaction.editReply({
@@ -373,4 +379,7 @@ module.exports = {
       flags: MessageFlags.Ephemeral,
     });
   },
+  buildRankingBoardMessagePayload,
+  loadRankingRoster,
+  reloadRankingRoster,
 };
