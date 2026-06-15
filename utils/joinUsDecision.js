@@ -105,7 +105,7 @@ async function applyAcceptRoles(guild, member) {
     console.warn(`⚠️ Failed to remove Applicant role from ${member.user?.tag}: ${err.message}`);
   }
 
-  // Remove Unverified role
+  // Legacy cleanup: older members may still have Unverified from the previous join flow.
   try {
     const unverifiedRole = guild.roles.cache.find((r) => r.name === UNVERIFIED_ROLE_NAME);
     if (unverifiedRole && member.roles.cache.has(unverifiedRole.id)) {
@@ -139,7 +139,7 @@ async function applyDeclineRoles(guild, member) {
   }
 
   try {
-    // Remove Unverified role so declined users can explore limited channels
+    // Legacy cleanup: older members may still have Unverified from the previous join flow.
     const unverifiedRole = guild.roles.cache.find((r) => r.name === UNVERIFIED_ROLE_NAME);
     if (unverifiedRole && member.roles.cache.has(unverifiedRole.id)) {
       await ensureCanManageRole(guild, unverifiedRole);

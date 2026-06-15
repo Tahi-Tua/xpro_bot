@@ -5,7 +5,32 @@ const {
   scheduleReturningSyndicateCleanup,
 } = require("../utils/syndicateRoleCleanup");
 
-const UNVERIFIED_ROLE_NAME = "Unverified";
+async function assignGuestRole(member) {
+  if (!GUEST_ROLE_ID) {
+    console.warn("⚠️ GUEST_ROLE_ID is not configured; new member will not receive Guest.");
+    return { added: false, reason: "missing_config" };
+  }
+
+  const guestRole = member.guild.roles.cache.get(GUEST_ROLE_ID);
+  if (!guestRole) {
+    console.warn(`⚠️ Guest role not found for ID: ${GUEST_ROLE_ID}`);
+    return { added: false, reason: "missing_role" };
+  }
+
+  if (member.roles.cache.has(guestRole.id)) {
+    console.log(`ℹ️ ${member.user.tag} already has Guest role.`);
+    return { added: false, reason: "already_has_role" };
+  }
+
+  try {
+    await member.roles.add(guestRole);
+    console.log(`✅ Added Guest role to ${member.user.tag}`);
+    return { added: true, reason: "added" };
+  } catch (err) {
+    console.error("❌ Cannot add Guest role:", err.message);
+    return { added: false, reason: "add_failed", error: err };
+  }
+}
 
 module.exports = (client) => {
   client.on("guildMemberAdd", async (member) => {
@@ -32,35 +57,7 @@ module.exports = (client) => {
       );
     }
 
-    // Add Unverified role to new members
-    const unverifiedRole = member.guild.roles.cache.find(
-      (r) => r.name === UNVERIFIED_ROLE_NAME
-    );
-    if (unverifiedRole) {
-      try {
-        await member.roles.add(unverifiedRole);
-        console.log(`✅ Added ${UNVERIFIED_ROLE_NAME} role to ${member.user.tag}`);
-      } catch (err) {
-        console.error(`❌ Cannot add ${UNVERIFIED_ROLE_NAME} role:`, err.message);
-      }
-    } else {
-      console.warn(
-        `⚠️ ${UNVERIFIED_ROLE_NAME} role not found. Create it in Discord server settings.`
-      );
-    }
-
-    // Remove Guest role if it was auto-assigned by Discord (should only get Guest after acceptance)
-    if (GUEST_ROLE_ID) {
-      const guestRole = member.guild.roles.cache.get(GUEST_ROLE_ID);
-      if (guestRole && member.roles.cache.has(guestRole.id)) {
-        try {
-          await member.roles.remove(guestRole);
-          console.log(`✅ Removed Guest role from ${member.user.tag} (should only get after acceptance)`);
-        } catch (err) {
-          console.error(`❌ Cannot remove Guest role:`, err.message);
-        }
-      }
-    }
+    await assignGuestRole(member);
 
     const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
     if (channel?.isTextBased?.()) {
@@ -73,3 +70,5 @@ module.exports = (client) => {
     }
   });
 };
+
+module.exports.assignGuestRole = assignGuestRole;

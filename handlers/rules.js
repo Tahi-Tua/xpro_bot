@@ -41,8 +41,8 @@ module.exports = (client) => {
           console.log(`⚠️ Role '${APPLICANT_ROLE_NAME}' not found. Please create it in Discord.`);
         }
 
-        // IMPORTANT: keep the Unverified role until staff accepts the application in the ticket.
-        // If we remove it here, Discord may reveal hidden channels too early.
+        // New members already receive Guest on join. Applicant only marks users
+        // who accepted rules and may want to apply to the syndicate.
       }
 
       const logChannel = await guild.channels
