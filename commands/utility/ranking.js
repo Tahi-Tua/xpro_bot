@@ -22,6 +22,7 @@ const {
 } = require("../../utils/memberRankingStore");
 
 const { buildLeaderboardScreenshotBuffer } = require("../../utils/leaderboardScreenshot");
+const { loadSeasonRankings } = require("../../utils/memberRankingSeasons");
 
 const ROSTER_PATH = process.env.MEMBER_RANKING_ROSTER_FILE || path.join(__dirname, "..", "..", "data", "memberRankingRoster.json");
 const ROSTER_URL = process.env.MEMBER_RANKING_ROSTER_URL || "https://raw.githubusercontent.com/Tahi-Tua/xpro_bot/main/data/memberRankingRoster.json";
@@ -182,6 +183,20 @@ function buildListMessage(rankings) {
     .join("\n");
 }
 
+function buildSeasonRankingMessage(season, rankings, options = {}) {
+  const seasonLabel = String(season);
+  if (!rankings.length) {
+    return `No ranking data found for season **${seasonLabel}**.`;
+  }
+
+  const source = options.source ? `\nSource: **${options.source}**` : "";
+  const lines = rankings
+    .slice(0, 20)
+    .map((entry) => `**#${entry.rank}** — ${entry.name} : **${formatNumber(entry.score)}**`);
+
+  return `🏆 **XPRO MEMBER — Season ${seasonLabel} ranking**${source}\n\n${lines.join("\n")}`;
+}
+
 async function buildRankingBoardMessagePayload(options = {}) {
   const pngBuffer = await buildLeaderboardScreenshotBuffer({
     rosterUrl: options.rosterUrl || ROSTER_URL,
@@ -215,6 +230,18 @@ module.exports = {
       subcommand
         .setName("list")
         .setDescription("Show the current ranking list privately."),
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("season")
+        .setDescription("Show the ranking for a specific historical season.")
+        .addIntegerOption((option) =>
+          option
+            .setName("season")
+            .setDescription("Season number, for example 27.")
+            .setMinValue(1)
+            .setRequired(true),
+        ),
     )
     .addSubcommand((subcommand) =>
       subcommand
@@ -300,6 +327,26 @@ module.exports = {
       }
     }
 
+    if (subcommand === "season") {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+      const season = interaction.options.getInteger("season");
+      const result = await loadSeasonRankings(season);
+
+      if (!result.ok) {
+        console.warn("[ranking season] Failed to load season rankings:", result.error);
+        return interaction.editReply({
+          content: `❌ Could not load ranking data for season **${season}**.`,
+          allowedMentions: { parse: [] },
+        });
+      }
+
+      return interaction.editReply({
+        content: buildSeasonRankingMessage(result.season, result.rankings, { source: result.source }),
+        allowedMentions: { parse: [] },
+      });
+    }
+
     if (!canManageRankings(interaction)) {
       return interaction.reply({
         content: "❌ You do not have permission to manage member rankings.",
@@ -379,6 +426,7 @@ module.exports = {
       flags: MessageFlags.Ephemeral,
     });
   },
+  buildSeasonRankingMessage,
   buildRankingBoardMessagePayload,
   loadRankingRoster,
   reloadRankingRoster,
