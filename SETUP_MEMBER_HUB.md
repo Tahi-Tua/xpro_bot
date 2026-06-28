@@ -93,5 +93,4 @@ Commands:
 - `/hub` posts the Glide Member Hub link.
 - `/ranking board` posts the Discord PNG ranking board.
 - `/ranking reload`, `/ranking set`, `/ranking remove`, and `/ranking reset` manage ranking data.
-- The bot automatically publishes the ranking board every Monday at 03:00 Europe/Paris in `MEMBER_RANKINGS_CHANNEL_ID`.
 - The Member Hub `Leaderboard` sheet is populated from the same ranking data source.
