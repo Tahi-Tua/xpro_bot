@@ -13,6 +13,7 @@ const {
   hasYoutubeFeedSource,
 } = require("../utils/youtubeFeed");
 const {
+  buildYoutubeAnnouncement,
   extractYoutubeVideoIds,
   selectVideosForAnnouncement,
 } = require("../utils/youtubeNotifierState");
@@ -121,7 +122,7 @@ async function getRecentlyAnnouncedVideoIds(channel, botUserId) {
 
 async function announceVideo(channel, video) {
   await channel.send({
-    content: `@everyone A new video has been released, go check it out\n${video.url}`,
+    content: buildYoutubeAnnouncement(video.url),
     allowedMentions: {
       parse: ["everyone"],
       roles: [],

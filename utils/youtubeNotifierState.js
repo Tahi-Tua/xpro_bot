@@ -4,6 +4,10 @@ const YOUTUBE_VIDEO_ID_PATTERNS = [
   /youtu\.be\/([A-Za-z0-9_-]+)/gi,
 ];
 
+function buildYoutubeAnnouncement(videoUrl) {
+  return `@here A new video has been released, go check it out\n${videoUrl}`;
+}
+
 function extractYoutubeVideoIds(content = "") {
   const ids = new Set();
 
@@ -27,6 +31,7 @@ function selectVideosForAnnouncement(videos, seenVideoIds, options = {}) {
 }
 
 module.exports = {
+  buildYoutubeAnnouncement,
   extractYoutubeVideoIds,
   selectVideosForAnnouncement,
 };
