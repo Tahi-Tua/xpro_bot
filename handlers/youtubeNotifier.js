@@ -4,8 +4,6 @@ const path = require("path");
 const { ChannelType, Events, PermissionFlagsBits } = require("discord.js");
 const {
   CLAN_CHATS_CATEGORY_ID,
-  MEDIA_MANAGER_ROLE_ID,
-  MEDIA_MANAGER_ROLE_NAME,
   YOUTUBE_ANNOUNCEMENTS_CHANNEL_ID,
   YOUTUBE_ANNOUNCEMENTS_CHANNEL_NAME,
 } = require("../config/channels");
@@ -34,19 +32,6 @@ function saveState(state) {
     }),
   );
   return saveQueue;
-}
-
-function getMediaManagerTarget(guild) {
-  if (MEDIA_MANAGER_ROLE_ID) {
-    return { mention: `<@&${MEDIA_MANAGER_ROLE_ID}>`, roleId: MEDIA_MANAGER_ROLE_ID };
-  }
-
-  const role = guild.roles.cache.find(
-    (candidate) => candidate.name.toLowerCase() === MEDIA_MANAGER_ROLE_NAME.toLowerCase(),
-  );
-  return role
-    ? { mention: `<@&${role.id}>`, roleId: role.id }
-    : { mention: `@${MEDIA_MANAGER_ROLE_NAME}`, roleId: null };
 }
 
 function sameChannelName(left, right) {
@@ -90,10 +75,9 @@ async function resolveAnnouncementChannel(client) {
   });
 }
 
-async function announceVideo(channel, guild, video) {
-  const mediaManager = getMediaManagerTarget(guild);
+async function announceVideo(channel, video) {
   await channel.send({
-    content: `@everyone Genix vient de publier une nouvelle vidéo sur YouTube !\n${video.url}`,
+    content: `@everyone A new video has been released, go check it out\n${video.url}`,
     allowedMentions: {
       parse: ["everyone"],
       roles: [],
@@ -130,7 +114,7 @@ async function checkYoutubeFeed(client) {
     }
 
     for (const video of newVideos) {
-      await announceVideo(channel, channel.guild, video);
+      await announceVideo(channel, video);
       seen.add(video.videoId);
     }
 
