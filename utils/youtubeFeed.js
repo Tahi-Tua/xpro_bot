@@ -1,41 +1,91 @@
 const https = require("https");
 
 const YOUTUBE_FEED_BASE_URL = "https://www.youtube.com/feeds/videos.xml";
-const DEFAULT_YOUTUBE_CHANNEL_URL = "https://youtube.com/@xavierprobe?si=jk2OFU3L3oYDDqBw";
+const DEFAULT_YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@xavierprobe";
+const MAX_REDIRECTS = 5;
+const REQUEST_TIMEOUT_MS = Number(process.env.YOUTUBE_REQUEST_TIMEOUT_MS || 10000);
 let cachedFeedUrl = null;
 
 function hasYoutubeFeedSource() {
   return Boolean(
-    process.env.YOUTUBE_FEED_URL ||
-      process.env.YOUTUBE_CHANNEL_ID ||
-      process.env.YOUTUBE_CHANNEL_URL ||
+    process.env.XPRO_YOUTUBE_FEED_URL ||
+      process.env.XPRO_YOUTUBE_CHANNEL_ID ||
+      process.env.XPRO_YOUTUBE_CHANNEL_URL ||
       DEFAULT_YOUTUBE_CHANNEL_URL,
   );
 }
 
 async function getYoutubeFeedUrl() {
   if (cachedFeedUrl) return cachedFeedUrl;
-  if (process.env.YOUTUBE_FEED_URL) return process.env.YOUTUBE_FEED_URL;
-  if (process.env.YOUTUBE_CHANNEL_ID) {
-    cachedFeedUrl = `${YOUTUBE_FEED_BASE_URL}?channel_id=${encodeURIComponent(process.env.YOUTUBE_CHANNEL_ID)}`;
+
+  if (process.env.XPRO_YOUTUBE_FEED_URL) {
+    cachedFeedUrl = process.env.XPRO_YOUTUBE_FEED_URL;
     return cachedFeedUrl;
   }
 
-  const channelUrl = process.env.YOUTUBE_CHANNEL_URL || DEFAULT_YOUTUBE_CHANNEL_URL;
+  if (process.env.XPRO_YOUTUBE_CHANNEL_ID) {
+    cachedFeedUrl = `${YOUTUBE_FEED_BASE_URL}?channel_id=${encodeURIComponent(process.env.XPRO_YOUTUBE_CHANNEL_ID)}`;
+    return cachedFeedUrl;
+  }
+
+  const channelUrl = process.env.XPRO_YOUTUBE_CHANNEL_URL || DEFAULT_YOUTUBE_CHANNEL_URL;
   const channelId = await resolveYoutubeChannelId(channelUrl);
-  if (!channelId) return null;
+  if (!channelId) {
+    throw new Error(`Could not resolve YouTube channel ID from ${channelUrl}`);
+  }
 
   cachedFeedUrl = `${YOUTUBE_FEED_BASE_URL}?channel_id=${encodeURIComponent(channelId)}`;
   return cachedFeedUrl;
 }
 
-function fetchText(url) {
+function fetchText(url, options = {}) {
+  const {
+    redirectsRemaining = MAX_REDIRECTS,
+    request = https.get,
+    timeoutMs = REQUEST_TIMEOUT_MS,
+  } = options;
+
   return new Promise((resolve, reject) => {
-    https
-      .get(url, { headers: { "User-Agent": "xpro-bot/1.0" } }, (response) => {
-        if (response.statusCode < 200 || response.statusCode >= 300) {
+    const requestHandle = request(
+      url,
+      { headers: { "User-Agent": "xpro-bot/1.0" } },
+      (response) => {
+        const statusCode = Number(response.statusCode || 0);
+        const location = response.headers?.location;
+
+        if (statusCode >= 300 && statusCode < 400 && location) {
           response.resume();
-          reject(new Error(`YouTube feed returned HTTP ${response.statusCode}`));
+          if (redirectsRemaining <= 0) {
+            reject(new Error("YouTube request exceeded the redirect limit"));
+            return;
+          }
+
+          let redirectUrl;
+          try {
+            redirectUrl = new URL(location, url);
+          } catch {
+            reject(new Error(`YouTube returned an invalid redirect URL: ${location}`));
+            return;
+          }
+
+          if (redirectUrl.protocol !== "https:") {
+            reject(new Error(`Refusing non-HTTPS YouTube redirect: ${redirectUrl}`));
+            return;
+          }
+
+          resolve(
+            fetchText(redirectUrl.toString(), {
+              redirectsRemaining: redirectsRemaining - 1,
+              request,
+              timeoutMs,
+            }),
+          );
+          return;
+        }
+
+        if (statusCode < 200 || statusCode >= 300) {
+          response.resume();
+          reject(new Error(`YouTube request returned HTTP ${statusCode}`));
           return;
         }
 
@@ -45,8 +95,13 @@ function fetchText(url) {
           body += chunk;
         });
         response.on("end", () => resolve(body));
-      })
-      .on("error", reject);
+      },
+    );
+
+    requestHandle.setTimeout?.(timeoutMs, () => {
+      requestHandle.destroy(new Error(`YouTube request timed out after ${timeoutMs}ms`));
+    });
+    requestHandle.on("error", reject);
   });
 }
 
@@ -108,11 +163,11 @@ function parseYoutubeFeed(xml) {
   return entries;
 }
 
-async function fetchLatestYoutubeVideos() {
-  const feedUrl = await getYoutubeFeedUrl();
-  if (!feedUrl) return [];
+async function fetchLatestYoutubeVideos(feedUrl = null) {
+  const resolvedFeedUrl = feedUrl || await getYoutubeFeedUrl();
+  if (!resolvedFeedUrl) return [];
 
-  const xml = await fetchText(feedUrl);
+  const xml = await fetchText(resolvedFeedUrl);
   return parseYoutubeFeed(xml);
 }
 
@@ -120,6 +175,7 @@ module.exports = {
   DEFAULT_YOUTUBE_CHANNEL_URL,
   extractYoutubeChannelIdFromHtml,
   fetchLatestYoutubeVideos,
+  fetchText,
   getYoutubeFeedUrl,
   hasYoutubeFeedSource,
   parseYoutubeFeed,
