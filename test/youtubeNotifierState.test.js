@@ -2,9 +2,18 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  buildYoutubeAnnouncement,
   extractYoutubeVideoIds,
   selectVideosForAnnouncement,
 } = require("../utils/youtubeNotifierState");
+
+test("buildYoutubeAnnouncement mentions only active members with @here", () => {
+  assert.equal(
+    buildYoutubeAnnouncement("https://www.youtube.com/shorts/latest"),
+    "@here A new video has been released, go check it out\nhttps://www.youtube.com/shorts/latest",
+  );
+  assert.equal(buildYoutubeAnnouncement("https://youtu.be/latest").includes("@everyone"), false);
+});
 
 const videos = [
   { videoId: "newest", url: "https://www.youtube.com/shorts/newest" },
