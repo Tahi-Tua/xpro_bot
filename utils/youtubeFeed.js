@@ -1,7 +1,7 @@
 const https = require("https");
 
 const YOUTUBE_FEED_BASE_URL = "https://www.youtube.com/feeds/videos.xml";
-const DEFAULT_YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@SirGenix";
+const DEFAULT_YOUTUBE_CHANNEL_URL = "https://youtube.com/@xavierprobe?si=jk2OFU3L3oYDDqBw";
 let cachedFeedUrl = null;
 
 function hasYoutubeFeedSource() {
